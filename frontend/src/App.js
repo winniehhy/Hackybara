@@ -23,7 +23,12 @@ function App() {
     formData.append('file', selectedFile);
 
     try {
-      const response = await fetch('http://localhost:5000/ocr', {
+      // Use relative path for production, localhost for development
+      const apiUrl = process.env.NODE_ENV === 'production' 
+        ? '/api/extract' 
+        : 'http://localhost:5000/extract';
+        
+      const response = await fetch(apiUrl, {
         method: 'POST',
         body: formData,
       });
@@ -36,20 +41,24 @@ function App() {
           text: data.text,
           filename: data.filename,
           timestamp: data.timestamp,
-          outputFile: data.output_file
+          fileType: data.file_type,
+          extractionMethod: data.extraction_method,
+          characterCount: data.character_count
         });
       } else {
         setResult({
           success: false,
-          message: data.message || 'OCR processing failed',
-          filename: data.filename
+          message: data.message || 'Text extraction failed',
+          filename: data.filename,
+          fileType: data.file_type,
+          extractionMethod: data.extraction_method
         });
       }
     } catch (error) {
       console.error('Upload error:', error);
       setResult({
         success: false,
-        message: 'Failed to connect to OCR service'
+        message: 'Failed to connect to text extraction service'
       });
     } finally {
       setUploading(false);
@@ -59,14 +68,23 @@ function App() {
   return (
     <div className="App">
       <div className="upload-container">
-        <h1>OCR File Upload</h1>
+        <h1>Multi-Format Text Extractor</h1>
         <div className="upload-section">
           <input
             type="file"
             onChange={handleFileChange}
             className="file-input"
-            accept="image/*"
+            accept="image/*,.pdf,.xlsx,.xls,.csv"
           />
+          <div className="supported-formats">
+            <p><strong>Supported formats:</strong></p>
+            <ul>
+              <li>📷 Images: JPEG, PNG, BMP, TIFF (OCR)</li>
+              <li>📄 PDF: Text-based and Scanned (OCR fallback)</li>
+              <li>📊 Excel: XLS, XLSX</li>
+              <li>📋 CSV files</li>
+            </ul>
+          </div>
           {selectedFile && (
             <p className="file-info">
               Selected: {selectedFile.name} ({(selectedFile.size / 1024).toFixed(2)} KB)
@@ -77,18 +95,20 @@ function App() {
             className="upload-button"
             disabled={uploading}
           >
-            {uploading ? 'Processing...' : 'Upload & Extract Text'}
+                        {uploading ? 'Processing...' : 'Extract Text'}
           </button>
         </div>
 
         {result && (
           <div className="result-section">
-            <h3>OCR Result:</h3>
+            <h3>Extraction Result:</h3>
             {result.success ? (
               <div className="success-result">
                 <p><strong>File:</strong> {result.filename}</p>
+                <p><strong>File Type:</strong> {result.fileType}</p>
+                <p><strong>Extraction Method:</strong> {result.extractionMethod}</p>
                 <p><strong>Processed at:</strong> {result.timestamp}</p>
-                <p><strong>Output saved to:</strong> {result.outputFile}</p>
+                <p><strong>Characters extracted:</strong> {result.characterCount?.toLocaleString()}</p>
                 <div className="extracted-text">
                   <h4>Extracted Text:</h4>
                   <pre>{result.text}</pre>
@@ -98,6 +118,8 @@ function App() {
               <div className="error-result">
                 <p><strong>Error:</strong> {result.message}</p>
                 {result.filename && <p><strong>File:</strong> {result.filename}</p>}
+                {result.fileType && <p><strong>File Type:</strong> {result.fileType}</p>}
+                {result.extractionMethod && <p><strong>Attempted Method:</strong> {result.extractionMethod}</p>}
               </div>
             )}
           </div>
