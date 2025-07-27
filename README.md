@@ -100,7 +100,6 @@ For development, it's common to run the frontend locally with `npm start`.
 Hackybara/
 ├── backend/
 │   ├── multi_file_api.py      # Main API with multi-format support
-│   ├── flask_api.py           # Original image-only API
 │   ├── ocr_env/               # Python virtual environment
 │   ├── uploads/               # Temporary file storage
 │   └── Dockerfile             # Backend Dockerfile
