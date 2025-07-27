@@ -1,17 +1,8 @@
-# Multi-Format Text Extractor
-
-A web application that extracts text from multiple file formats using OCR and parsing techniques.
-
-## 🎯 Supported File Types
-
-- **📷 Images**: JPEG, PNG, BMP, TIFF (using OCR)
-- **📄 PDF**: Text-based PDFs (direct extraction) and Scanned PDFs (OCR fallback)
-- **📊 Excel**: XLS, XLSX files
-- **📋 CSV**: Comma-separated values files
+# Hackybara
 
 ## 🚀 Quick Start
 
-### 1. Install Dependencies
+### 1. Install Dependencies (Local)
 
 ```bash
 # Make installation script executable
@@ -27,7 +18,7 @@ bash install_packages.sh
 python test_packages.py
 ```
 
-### 3. Run the Application
+### 3. Run the Application (Local)
 
 **Backend (Terminal 1):**
 ```bash
@@ -39,12 +30,32 @@ python multi_file_api.py
 **Frontend (Terminal 2):**
 ```bash
 cd frontend
+npm install
 npm start
 ```
 
 ### 4. Access the Application
 
-Open your browser and go to `http://localhost:3000`
+Open your browser and go to [http://localhost:3000](http://localhost:3000)
+
+---
+
+## 🐳 Running with Docker
+
+### Backend
+
+```bash
+cd backend
+docker build -t hackybara-backend .
+docker run -d -p 5000:5000 --name hackybara-backend hackybara-backend
+```
+
+### Frontend
+
+You can use a simple Node-based container, or run locally as above.  
+For development, it's common to run the frontend locally with `npm start`.
+
+---
 
 ## 📦 Required Packages
 
@@ -60,6 +71,8 @@ Open your browser and go to `http://localhost:3000`
 - **React**: Frontend framework
 - **Standard React dependencies**
 
+---
+
 ## 🔧 How It Works
 
 1. **File Upload**: Users can upload images, PDFs, Excel files, or CSV files
@@ -72,10 +85,14 @@ Open your browser and go to `http://localhost:3000`
    - **CSV**: Data parsing using pandas
 4. **Results**: Extracted text is displayed with processing details
 
+---
+
 ## 🛠️ API Endpoints
 
 - `POST /extract`: Upload and process file
 - `GET /health`: Service health check
+
+---
 
 ## 📁 Project Structure
 
@@ -85,13 +102,15 @@ Hackybara/
 │   ├── multi_file_api.py      # Main API with multi-format support
 │   ├── flask_api.py           # Original image-only API
 │   ├── ocr_env/               # Python virtual environment
-│   └── uploads/               # Temporary file storage
+│   ├── uploads/               # Temporary file storage
+│   └── Dockerfile             # Backend Dockerfile
 ├── frontend/
 │   ├── src/
 │   │   ├── App.js             # Updated React app
 │   │   └── App.css            # Styling
 │   └── public/
+│   └── package.json           # Frontend dependencies
 ├── requirements.txt           # Python dependencies
 ├── install_packages.sh        # Installation script
-└── test_packages.py          # Package verification script
+└── test_packages.py           # Package verification script
 ```

@@ -8,7 +8,7 @@ source backend/ocr_env/bin/activate
 
 # Install Python packages
 echo "🐍 Installing Python packages..."
-pip install -r requirements.txt
+pip install -r backend/requirements.txt
 
 echo "✅ Installation complete!"
 
