@@ -13,6 +13,13 @@
 
 /backend/uploads
 
+# Backend Python cache and database
+/backend/__pycache__/
+/backend/document_storage.db
+
+/backend/ocr_env/
+/frontend/node_modules/
+
 # misc
 .DS_Store
 .env.local
