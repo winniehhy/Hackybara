@@ -52,7 +52,6 @@ class PIIDetector:
             PIIType.IC: re.compile(r'\b\d{6}-\d{2}-\d{4}\b'),
             PIIType.CREDIT_CARD: re.compile(r'\b(?:\d{4}[-\s]?){3}\d{4}\b'),
             PIIType.IP_ADDRESS: re.compile(r'\b(?:\d{1,3}\.){3}\d{1,3}\b'),
-            # PIIType.ADDRESS: re.compile(r'\b(?:jalan|jln|lorong|lrg|taman|tmn|kampung|kg|bandar|persiaran|blok|block|blk|unit|no\.?|apt|apartment|condo|mines|flat)[\s,.:#\-]*[a-zA-Z0-9\s,\'\-/.()]{3,}\b', re.IGNORECASE),
             PIIType.PASSPORT: re.compile(r'\b[A-Z]{1}\d{7,8}\b'),
         }
 
@@ -89,7 +88,7 @@ class PIIDetector:
                         "num_predict": 1000
                     }
                 },
-                timeout=120
+                timeout=300
             )
             response.raise_for_status()
             return response.json()["response"]
@@ -274,7 +273,7 @@ Only return the JSON, no other text.
         
         return summary
 
-# Database functions remain the same
+# Database functions (for standalone usage)
 def get_latest_extracted_text(db_path: str) -> Tuple[Optional[int], Optional[str], Optional[str]]:
     """
     Connects to the SQLite database and retrieves the latest extracted_text value based on created_at timestamp.
@@ -350,7 +349,7 @@ def test_database_connection(db_path: str):
         print(f"Database error: {e}")
 
 def main():
-    """Example usage with enhanced debugging"""
+    """Example usage with enhanced debugging - only runs when script is executed directly"""
     db_path = "document_storage.db"
     
     # Test database first
@@ -430,6 +429,6 @@ def main():
 
     print(f"\nResults saved to: {output_path}")
 
-
+# Only run main() when script is executed directly, not when imported
 if __name__ == "__main__":
     main()

@@ -16,6 +16,17 @@ import sqlite3
 import hashlib
 import json
 from contextlib import contextmanager
+import threading
+import time
+
+# Import PII detection from the separate file
+try:
+    from pii_detection import PIIDetector  # Assuming your PII file is named pii_detection.py
+    PII_DETECTION_AVAILABLE = True
+    print("PII Detection module loaded successfully")
+except ImportError as e:
+    print(f"PII Detection module not available: {e}")
+    PII_DETECTION_AVAILABLE = False
 
 app = Flask(__name__)
 CORS(app)
@@ -49,7 +60,7 @@ class DatabaseManager:
         with self.get_db_connection() as conn:
             cursor = conn.cursor()
             
-            # Create documents table
+            # Create documents table (with PII fields added)
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS documents (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,7 +76,9 @@ class DatabaseManager:
                     extraction_timestamp DATETIME,
                     character_count INTEGER,
                     status TEXT DEFAULT 'uploaded',
-                    metadata TEXT  -- JSON field for additional metadata
+                    metadata TEXT,
+                    pii_processed BOOLEAN DEFAULT 0,
+                    pii_processing_timestamp DATETIME
                 )
             ''')
             
@@ -78,6 +91,22 @@ class DatabaseManager:
                     extraction_confidence REAL,
                     extraction_errors TEXT,
                     created_at DATETIME NOT NULL,
+                    FOREIGN KEY (file_id) REFERENCES documents (file_id)
+                )
+            ''')
+            
+            # Create PII results table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS pii_results (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    file_id TEXT NOT NULL,
+                    pii_summary TEXT,  -- JSON field containing PII summary
+                    pii_matches TEXT,  -- JSON field containing all matches
+                    total_pii_found INTEGER DEFAULT 0,
+                    high_confidence_count INTEGER DEFAULT 0,
+                    processing_timestamp DATETIME NOT NULL,
+                    processing_duration REAL,  -- Processing time in seconds
+                    model_used TEXT DEFAULT 'gemma3',
                     FOREIGN KEY (file_id) REFERENCES documents (file_id)
                 )
             ''')
@@ -99,6 +128,7 @@ class DatabaseManager:
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_file_id ON documents (file_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_upload_timestamp ON documents (upload_timestamp)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_extracted_text_file_id ON extracted_text (file_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_pii_results_file_id ON pii_results (file_id)')
             
             conn.commit()
             print("Database initialized successfully")
@@ -141,6 +171,36 @@ class DatabaseManager:
             
             conn.commit()
     
+    def store_pii_results(self, file_id, pii_summary, pii_matches, processing_duration, model_used="gemma3"):
+        """Store PII detection results"""
+        with self.get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                INSERT INTO pii_results 
+                (file_id, pii_summary, pii_matches, total_pii_found, high_confidence_count, 
+                 processing_timestamp, processing_duration, model_used)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                file_id,
+                json.dumps(pii_summary),
+                json.dumps(pii_matches),
+                pii_summary.get('total_pii_found', 0),
+                pii_summary.get('high_confidence_count', 0),
+                datetime.now(),
+                processing_duration,
+                model_used
+            ))
+            
+            # Update document to mark PII as processed
+            cursor.execute('''
+                UPDATE documents 
+                SET pii_processed = 1, pii_processing_timestamp = ?
+                WHERE file_id = ?
+            ''', (datetime.now(), file_id))
+            
+            conn.commit()
+    
     def get_document(self, file_id):
         """Retrieve document information by file_id"""
         with self.get_db_connection() as conn:
@@ -155,13 +215,21 @@ class DatabaseManager:
             cursor.execute('SELECT * FROM extracted_text WHERE file_id = ? ORDER BY created_at DESC LIMIT 1', (file_id,))
             return cursor.fetchone()
     
+    def get_pii_results(self, file_id):
+        """Retrieve PII results by file_id"""
+        with self.get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM pii_results WHERE file_id = ? ORDER BY processing_timestamp DESC LIMIT 1', (file_id,))
+            return cursor.fetchone()
+    
     def list_documents(self, limit=50, offset=0):
         """List all documents with pagination"""
         with self.get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT file_id, original_filename, mime_type, file_size, 
-                       upload_timestamp, extraction_method, status, character_count
+                       upload_timestamp, extraction_method, status, character_count,
+                       pii_processed, pii_processing_timestamp
                 FROM documents 
                 ORDER BY upload_timestamp DESC 
                 LIMIT ? OFFSET ?
@@ -170,6 +238,75 @@ class DatabaseManager:
 
 # Initialize database
 db_manager = DatabaseManager(DATABASE_PATH)
+
+def process_pii_detection(file_id, extracted_text):
+    """
+    Process PII detection in a separate thread after text extraction
+    """
+    if not PII_DETECTION_AVAILABLE:
+        print(f"PII Detection not available for file {file_id}")
+        return
+    
+    try:
+        print(f"Starting PII detection for file {file_id}")
+        start_time = time.time()
+        
+        # Initialize PII detector
+        detector = PIIDetector(model="gemma3")
+        
+        # Detect PII
+        matches = detector.detect_pii(extracted_text, use_llm=True, debug=False)
+        
+        # Get summary
+        summary = detector.get_pii_summary(matches)
+        
+        # Convert matches to serializable format
+        pii_matches = [{
+            "text": match.text,
+            "type": match.pii_type.value,
+            "start_pos": match.start_pos,
+            "end_pos": match.end_pos,
+            "confidence": match.confidence
+        } for match in matches]
+        
+        processing_duration = time.time() - start_time
+        
+        # Store results in database
+        db_manager.store_pii_results(file_id, summary, pii_matches, processing_duration)
+        
+        print(f"PII detection completed for file {file_id}. Found {len(matches)} PII instances in {processing_duration:.2f}s")
+        
+        # Save detailed results to JSON file (optional)
+        output_dir = "pii_results"
+        os.makedirs(output_dir, exist_ok=True)
+        
+        output_data = {
+            "file_id": file_id,
+            "processing_timestamp": datetime.now().isoformat(),
+            "processing_duration": processing_duration,
+            "pii_summary": summary,
+            "matches": pii_matches,
+            "original_text_length": len(extracted_text),
+            "matches": [{
+            "text": match.text,
+            "type": match.pii_type.value,
+            "start_pos": match.start_pos,
+            "end_pos": match.end_pos,
+            "confidence": match.confidence
+        } for match in matches],
+        "original_text": extracted_text
+        }
+        
+        output_filename = f"pii_results_{file_id}.json"
+        output_path = os.path.join(output_dir, output_filename)
+        
+        with open(output_path, 'w') as f:
+            json.dump(output_data, f, indent=2)
+        
+        print(f"PII results saved to: {output_path}")
+        
+    except Exception as e:
+        print(f"Error in PII detection for file {file_id}: {e}")
 
 def calculate_file_hash(file_path):
     """Calculate SHA-256 hash of a file"""
@@ -428,11 +565,22 @@ def extract_text():
                 extraction_errors=extraction_errors
             )
         
+        # *** TRIGGER PII DETECTION AFTER SUCCESSFUL EXTRACTION ***
+        if extracted_text and character_count > 0:
+            # Start PII detection in a separate thread to avoid blocking the response
+            pii_thread = threading.Thread(
+                target=process_pii_detection, 
+                args=(file_id, extracted_text)
+            )
+            pii_thread.daemon = True
+            pii_thread.start()
+            print(f"PII detection started in background for file {file_id}")
+        
         # Prepare response
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         if extracted_text:
-            return jsonify({
+            response_data = {
                 'success': True,
                 'file_id': file_id,
                 'text': extracted_text,
@@ -441,8 +589,10 @@ def extract_text():
                 'extraction_method': extraction_method,
                 'timestamp': timestamp,
                 'character_count': character_count,
-                'file_size': file_size
-            })
+                'file_size': file_size,
+                'pii_detection_status': 'started' if PII_DETECTION_AVAILABLE and character_count > 0 else 'unavailable'
+            }
+            return jsonify(response_data)
         else:
             return jsonify({
                 'success': False,
@@ -452,7 +602,8 @@ def extract_text():
                 'file_type': mime_type,
                 'extraction_method': extraction_method,
                 'timestamp': timestamp,
-                'errors': extraction_errors
+                'errors': extraction_errors,
+                'pii_detection_status': 'not_applicable'
             })
     
     except Exception as e:
@@ -470,6 +621,7 @@ def get_document(file_id):
             return jsonify({'error': 'Document not found'}), 404
         
         extracted_text = db_manager.get_extracted_text(file_id)
+        pii_results = db_manager.get_pii_results(file_id)
         
         response = {
             'file_id': doc['file_id'],
@@ -479,12 +631,41 @@ def get_document(file_id):
             'upload_timestamp': doc['upload_timestamp'],
             'extraction_method': doc['extraction_method'],
             'character_count': doc['character_count'],
-            'status': doc['status']
+            'status': doc['status'],
+            'pii_processed': bool(doc['pii_processed']),
+            'pii_processing_timestamp': doc['pii_processing_timestamp']
         }
         
         if extracted_text:
             response['extracted_text'] = extracted_text['extracted_text']
             response['extraction_timestamp'] = extracted_text['created_at']
+        
+        if pii_results:
+            response['pii_summary'] = json.loads(pii_results['pii_summary'])
+            response['pii_processing_duration'] = pii_results['processing_duration']
+            response['pii_model_used'] = pii_results['model_used']
+        
+        return jsonify(response)
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/document/<file_id>/pii', methods=['GET'])
+def get_pii_results(file_id):
+    """Get detailed PII results for a specific document"""
+    try:
+        pii_results = db_manager.get_pii_results(file_id)
+        if not pii_results:
+            return jsonify({'error': 'PII results not found for this document'}), 404
+        
+        response = {
+            'file_id': file_id,
+            'pii_summary': json.loads(pii_results['pii_summary']),
+            'pii_matches': json.loads(pii_results['pii_matches']),
+            'processing_timestamp': pii_results['processing_timestamp'],
+            'processing_duration': pii_results['processing_duration'],
+            'model_used': pii_results['model_used']
+        }
         
         return jsonify(response)
     
@@ -519,11 +700,16 @@ def health_check():
             cursor = conn.cursor()
             cursor.execute('SELECT COUNT(*) FROM documents')
             doc_count = cursor.fetchone()[0]
+            
+            cursor.execute('SELECT COUNT(*) FROM pii_results')
+            pii_count = cursor.fetchone()[0]
         
         return jsonify({
             'status': 'healthy',
             'database': 'connected',
             'documents_count': doc_count,
+            'pii_results_count': pii_count,
+            'pii_detection_available': PII_DETECTION_AVAILABLE,
             'supported_formats': {
                 'images': ['JPEG', 'PNG', 'BMP', 'TIFF'],
                 'documents': ['PDF (text + scanned)', 'TXT'],
