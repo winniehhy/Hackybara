@@ -69,6 +69,8 @@ import os
 import base64
 import uuid
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from datetime import datetime
+
 
 def encrypt_pii_in_plaintext(input_path: str, pii_metadata_path: str):
     # Load metadata
@@ -114,12 +116,19 @@ def encrypt_pii_in_plaintext(input_path: str, pii_metadata_path: str):
     encrypted_text += text[last_idx:]  # Append any remaining text
 
     # Write encrypted output
-    output_file = input_path.replace(".txt", "_tokenized.txt")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # unique_id = str(uuid.uuid4())[:8]
+
+    base_name = os.path.splitext(os.path.basename(input_path))[0]
+    output_file = f"{base_name}_tokenized_{timestamp}.txt"
+    log_file = f"{base_name}_metadata_{timestamp}.json"
+
+    # output_file = input_path.replace(".txt", "_tokenized.txt")
     with open(output_file, "w") as f:
         f.write(encrypted_text)
 
     # Write token map and encryption info
-    log_file = input_path.replace(".txt", "_encryption_metadata.json")
+    # log_file = input_path.replace(".txt", "_encryption_metadata.json")
     with open(log_file, "w") as f:
         json.dump({
             "key": base64.b64encode(key).decode(),
