@@ -192,6 +192,7 @@ def detect_file_type(file_path):
             'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             'xls': 'application/vnd.ms-excel',
             'csv': 'text/csv',
+            'txt': 'text/plain',
             'jpg': 'image/jpeg',
             'jpeg': 'image/jpeg',
             'png': 'image/png',
@@ -303,6 +304,31 @@ def extract_text_from_csv(file_path):
         print(f"Error in CSV processing: {e}")
         return None
 
+def extract_text_from_txt(file_path):
+    """Extract text from plain text files"""
+    try:
+        # Try different encodings to handle various text files
+        encodings = ['utf-8', 'utf-16', 'latin-1', 'cp1252']
+        
+        for encoding in encodings:
+            try:
+                with open(file_path, 'r', encoding=encoding) as f:
+                    text = f.read()
+                    # If we successfully read the file, return the text
+                    return text.strip()
+            except UnicodeDecodeError:
+                continue
+        
+        # If all encodings fail, try binary mode and decode with error handling
+        with open(file_path, 'rb') as f:
+            raw_content = f.read()
+            text = raw_content.decode('utf-8', errors='ignore')
+            return text.strip()
+            
+    except Exception as e:
+        print(f"Error reading text file: {e}")
+        return None
+
 @app.route('/extract', methods=['POST'])
 def extract_text():
     try:
@@ -368,6 +394,10 @@ def extract_text():
                 extracted_text = extract_text_from_csv(file_path)
                 extraction_method = "CSV Parser"
                 
+            elif mime_type == 'text/plain':
+                extracted_text = extract_text_from_txt(file_path)
+                extraction_method = "Text File Parser"
+                
             else:
                 # Clean up and return error
                 os.remove(file_path)
@@ -377,7 +407,8 @@ def extract_text():
                         'Images (JPEG, PNG, BMP, TIFF)',
                         'PDF (text-based and scanned)',
                         'Excel (XLS, XLSX)',
-                        'CSV'
+                        'CSV',
+                        'Text files (TXT)'
                     ]
                 }), 400
         
@@ -495,7 +526,7 @@ def health_check():
             'documents_count': doc_count,
             'supported_formats': {
                 'images': ['JPEG', 'PNG', 'BMP', 'TIFF'],
-                'documents': ['PDF (text + scanned)'],
+                'documents': ['PDF (text + scanned)', 'TXT'],
                 'spreadsheets': ['Excel (XLS, XLSX)', 'CSV']
             }
         })
