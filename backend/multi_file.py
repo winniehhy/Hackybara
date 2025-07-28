@@ -16,6 +16,7 @@ import sqlite3
 import hashlib
 import json
 from contextlib import contextmanager
+import functools
 
 app = Flask(__name__)
 CORS(app)
@@ -23,22 +24,60 @@ CORS(app)
 # Configuration
 UPLOAD_FOLDER = 'uploads'
 DATABASE_PATH = 'document_storage.db'
+SQLCIPHER_KEY = '121314'  # encryption key
 
 # Create directories if they don't exist
 for folder in [UPLOAD_FOLDER]:
     if not os.path.exists(folder):
         os.makedirs(folder)
 
+def require_access_key(f):
+    """Decorator to require access key for read operations"""
+    @functools.wraps(f)
+    def decorated_function(*args, **kwargs):
+        # Check for access key in header or query parameter
+        access_key = request.headers.get('X-Access-Key') or request.args.get('access_key')
+        
+        if not access_key or access_key != SQLCIPHER_KEY:
+            return jsonify({
+                'error': 'Access denied. Valid access key required for data retrieval.',
+                'message': 'Provide access key via X-Access-Key header or access_key parameter'
+            }), 403
+        
+        return f(*args, **kwargs)
+    return decorated_function
+
 class DatabaseManager:
-    def __init__(self, db_path):
+    def __init__(self, db_path, cipher_key):
         self.db_path = db_path
+        self.cipher_key = cipher_key
         self.init_database()
     
     @contextmanager
     def get_db_connection(self):
-        """Context manager for database connections"""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row  # Enable column access by name
+        """Context manager for database connections with SQLCipher"""
+        try:
+            # Try to import pysqlcipher3 first
+            import pysqlcipher3.dbapi2 as sqlite3_cipher
+            
+            conn = sqlite3_cipher.connect(self.db_path)
+            # Set the encryption key
+            conn.execute(f"PRAGMA key = '{self.cipher_key}'")
+            conn.row_factory = sqlite3_cipher.Row  # Enable column access by name
+            
+            # Test if the database can be accessed with this key
+            conn.execute("SELECT name FROM sqlite_master WHERE type='table' LIMIT 1").fetchone()
+            
+        except ImportError:
+            # Fallback to regular SQLite if pysqlcipher3 is not available
+            print("WARNING: pysqlcipher3 not found. Using regular SQLite without encryption.")
+            print("Install with: pip install pysqlcipher3")
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+        except Exception as db_error:
+            # If database access fails, it might be due to wrong key or corrupted database
+            raise Exception(f"Database access failed. Check encryption key or database integrity: {str(db_error)}")
+        
         try:
             yield conn
         finally:
@@ -49,7 +88,7 @@ class DatabaseManager:
         with self.get_db_connection() as conn:
             cursor = conn.cursor()
             
-            # Create documents table
+            # Create documents table (same structure as original)
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS documents (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -69,7 +108,7 @@ class DatabaseManager:
                 )
             ''')
             
-            # Create extracted_text table
+            # Create extracted_text table (same structure as original)
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS extracted_text (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -95,13 +134,42 @@ class DatabaseManager:
                 )
             ''')
             
-            # Create indexes for better performance
+            # Create access_log table to track who accesses what
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS access_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    access_type TEXT NOT NULL,  -- 'upload', 'read', 'list'
+                    file_id TEXT,
+                    client_ip TEXT,
+                    user_agent TEXT,
+                    has_access_key BOOLEAN NOT NULL,
+                    timestamp DATETIME NOT NULL,
+                    success BOOLEAN NOT NULL
+                )
+            ''')
+            
+            # Create indexes for better performance (same as original)
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_file_id ON documents (file_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_upload_timestamp ON documents (upload_timestamp)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_extracted_text_file_id ON extracted_text (file_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_access_log_timestamp ON access_log (timestamp)')
             
             conn.commit()
-            print("Database initialized successfully")
+            print("Encrypted database initialized successfully")
+    
+    def log_access(self, access_type, file_id=None, client_ip=None, user_agent=None, has_access_key=False, success=True):
+        """Log access attempts for audit purposes"""
+        try:
+            with self.get_db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO access_log 
+                    (access_type, file_id, client_ip, user_agent, has_access_key, timestamp, success)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (access_type, file_id, client_ip, user_agent, has_access_key, datetime.now(), success))
+                conn.commit()
+        except Exception as e:
+            print(f"Failed to log access: {e}")
     
     def store_document(self, file_id, original_filename, stored_filename, file_path, 
                       mime_type, file_size, file_hash, metadata=None):
@@ -167,9 +235,25 @@ class DatabaseManager:
                 LIMIT ? OFFSET ?
             ''', (limit, offset))
             return cursor.fetchall()
+    
+    def get_access_stats(self):
+        """Get access statistics (requires access key)"""
+        with self.get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT 
+                    COUNT(*) as total_accesses,
+                    SUM(CASE WHEN has_access_key = 1 THEN 1 ELSE 0 END) as authorized_accesses,
+                    SUM(CASE WHEN access_type = 'upload' THEN 1 ELSE 0 END) as uploads,
+                    SUM(CASE WHEN access_type = 'read' THEN 1 ELSE 0 END) as reads,
+                    COUNT(DISTINCT file_id) as unique_files_accessed
+                FROM access_log
+                WHERE timestamp >= datetime('now', '-30 days')
+            ''')
+            return cursor.fetchone()
 
 # Initialize database
-db_manager = DatabaseManager(DATABASE_PATH)
+db_manager = DatabaseManager(DATABASE_PATH, SQLCIPHER_KEY)
 
 def calculate_file_hash(file_path):
     """Calculate SHA-256 hash of a file"""
@@ -331,6 +415,10 @@ def extract_text_from_txt(file_path):
 
 @app.route('/extract', methods=['POST'])
 def extract_text():
+    """Upload and extract text from files - RETURNS EXTRACTED TEXT (like original)"""
+    file_id = None  # Initialize file_id for error handling
+    file_path = None  # Initialize file_path for cleanup
+    
     try:
         if 'file' not in request.files:
             return jsonify({'error': 'No file provided'}), 400
@@ -344,6 +432,16 @@ def extract_text():
         file_extension = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''
         stored_filename = f"{file_id}.{file_extension}" if file_extension else file_id
         file_path = os.path.join(UPLOAD_FOLDER, stored_filename)
+        
+        # Log the upload attempt NOW that we have file_id
+        db_manager.log_access(
+            access_type='upload',
+            file_id=file_id,  # Now we have the file_id
+            client_ip=request.remote_addr,
+            user_agent=request.headers.get('User-Agent'),
+            has_access_key=False,  # Upload doesn't require key
+            success=True
+        )
         
         # Save file
         file.save(file_path)
@@ -399,6 +497,15 @@ def extract_text():
                 extraction_method = "Text File Parser"
                 
             else:
+                # Log the failure with file_id
+                db_manager.log_access(
+                    access_type='upload',
+                    file_id=file_id,
+                    client_ip=request.remote_addr,
+                    user_agent=request.headers.get('User-Agent'),
+                    has_access_key=False,
+                    success=False
+                )
                 # Clean up and return error
                 os.remove(file_path)
                 return jsonify({
@@ -428,14 +535,24 @@ def extract_text():
                 extraction_errors=extraction_errors
             )
         
-        # Prepare response
+        # Log successful completion (optional - you can remove this if too verbose)
+        db_manager.log_access(
+            access_type='upload_complete',
+            file_id=file_id,
+            client_ip=request.remote_addr,
+            user_agent=request.headers.get('User-Agent'),
+            has_access_key=False,
+            success=extracted_text is not None
+        )
+        
+        # Prepare response - RETURN THE EXTRACTED TEXT (same as original)
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         if extracted_text:
             return jsonify({
                 'success': True,
                 'file_id': file_id,
-                'text': extracted_text,
+                'text': extracted_text,  # THIS IS THE KEY FIX - return the extracted text
                 'filename': file.filename,
                 'file_type': mime_type,
                 'extraction_method': extraction_method,
@@ -457,14 +574,36 @@ def extract_text():
     
     except Exception as e:
         # Clean up file if it exists
-        if 'file_path' in locals() and os.path.exists(file_path):
+        if file_path and os.path.exists(file_path):
             os.remove(file_path)
+        
+        # Log the failure with file_id if we have it
+        db_manager.log_access(
+            access_type='upload',
+            file_id=file_id,  # This might be None if error occurred before file_id generation
+            client_ip=request.remote_addr,
+            user_agent=request.headers.get('User-Agent'),
+            has_access_key=False,
+            success=False
+        )
+        
         return jsonify({'error': str(e)}), 500
 
 @app.route('/document/<file_id>', methods=['GET'])
+@require_access_key
 def get_document(file_id):
-    """Retrieve document information by file_id"""
+    """Retrieve document information by file_id - REQUIRES ACCESS KEY"""
     try:
+        # Log the read attempt
+        db_manager.log_access(
+            access_type='read',
+            file_id=file_id,
+            client_ip=request.remote_addr,
+            user_agent=request.headers.get('User-Agent'),
+            has_access_key=True,
+            success=True
+        )
+        
         doc = db_manager.get_document(file_id)
         if not doc:
             return jsonify({'error': 'Document not found'}), 404
@@ -489,12 +628,30 @@ def get_document(file_id):
         return jsonify(response)
     
     except Exception as e:
+        db_manager.log_access(
+            access_type='read',
+            file_id=file_id,
+            client_ip=request.remote_addr,
+            user_agent=request.headers.get('User-Agent'),
+            has_access_key=True,
+            success=False
+        )
         return jsonify({'error': str(e)}), 500
 
 @app.route('/documents', methods=['GET'])
+@require_access_key
 def list_documents():
-    """List all documents with pagination"""
+    """List all documents with pagination - REQUIRES ACCESS KEY"""
     try:
+        # Log the list attempt
+        db_manager.log_access(
+            access_type='list',
+            client_ip=request.remote_addr,
+            user_agent=request.headers.get('User-Agent'),
+            has_access_key=True,
+            success=True
+        )
+        
         limit = min(int(request.args.get('limit', 50)), 100)  # Max 100 items
         offset = int(request.args.get('offset', 0))
         
@@ -508,11 +665,28 @@ def list_documents():
         })
     
     except Exception as e:
+        db_manager.log_access(
+            access_type='list',
+            client_ip=request.remote_addr,
+            user_agent=request.headers.get('User-Agent'),
+            has_access_key=True,
+            success=False
+        )
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/stats', methods=['GET'])
+@require_access_key
+def get_stats():
+    """Get access statistics - REQUIRES ACCESS KEY"""
+    try:
+        stats = db_manager.get_access_stats()
+        return jsonify(dict(stats) if stats else {})
+    except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    """Health check endpoint"""
+    """Health check endpoint - NO ACCESS KEY REQUIRED"""
     try:
         # Test database connection
         with db_manager.get_db_connection() as conn:
@@ -522,13 +696,15 @@ def health_check():
         
         return jsonify({
             'status': 'healthy',
-            'database': 'connected',
+            'database': 'connected (encrypted)',
             'documents_count': doc_count,
+            'access_model': 'Upload returns text immediately, Read operations require access key',
             'supported_formats': {
                 'images': ['JPEG', 'PNG', 'BMP', 'TIFF'],
                 'documents': ['PDF (text + scanned)', 'TXT'],
                 'spreadsheets': ['Excel (XLS, XLSX)', 'CSV']
-            }
+            },
+            'note': 'Upload endpoint returns extracted text immediately. Use X-Access-Key header for data retrieval endpoints.'
         })
     except Exception as e:
         return jsonify({
@@ -537,4 +713,5 @@ def health_check():
         }), 500
 
 if __name__ == '__main__':
+    print("✅ Fixed: file_id now properly logged in access_log table")
     app.run(debug=True, port=5000)

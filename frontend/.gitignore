@@ -11,6 +11,21 @@
 # production
 /build
 
+# Python
+__pycache__/
+*.pyc
+
+# Virtual environments
+ocr_env/
+venv/
+env/
+
+# Database
+*.db
+
+# VSCode
+.vscode/
+
 # misc
 .DS_Store
 .env.local
