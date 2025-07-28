@@ -8,9 +8,15 @@ function App() {
   const [progress, setProgress] = useState(0);
 
   const handleFileChange = (event) => {
-    setSelectedFile(event.target.files[0]);
+    const file = event.target.files[0];
+    setSelectedFile(file);
     setResult(null);
     setProgress(0);
+    setFileContent(null);
+    
+    if (file) {
+      readFileContent(file);
+    }
   };
 
   const getFileIcon = (file) => {
@@ -96,34 +102,143 @@ function App() {
     }
   };
 
+  const [fileContent, setFileContent] = useState(null);
+  const [fileContentLoading, setFileContentLoading] = useState(false);
+
+  const readFileContent = async (file) => {
+    if (!file) return null;
+    
+    setFileContentLoading(true);
+    
+    try {
+      const fileType = file.type;
+      
+      // Handle images
+      if (fileType.startsWith('image/')) {
+        const imageUrl = URL.createObjectURL(file);
+        setFileContent({ type: 'image', content: imageUrl });
+        return;
+      }
+      
+      // Handle CSV files
+      if (fileType === 'text/csv' || file.name.toLowerCase().endsWith('.csv')) {
+        const text = await file.text();
+        const lines = text.split('\n').slice(0, 20); // Show first 20 lines
+        setFileContent({ type: 'csv', content: lines.join('\n'), fullContent: text });
+        return;
+      }
+      
+      // Handle Excel files (show basic info since we can't parse without library)
+      if (fileType.includes('sheet') || fileType.includes('excel') || 
+          file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls')) {
+        setFileContent({ 
+          type: 'excel', 
+          content: `Excel file: ${file.name}\nSize: ${(file.size / 1024).toFixed(2)} KB\n\nThis Excel file will be processed by the server to extract its content.` 
+        });
+        return;
+      }
+      
+      // Handle PDF files (show basic info since we can't parse without library)
+      if (fileType === 'application/pdf') {
+        setFileContent({ 
+          type: 'pdf', 
+          content: `PDF file: ${file.name}\nSize: ${(file.size / 1024).toFixed(2)} KB\n\nThis PDF file will be processed by the server to extract its text content.` 
+        });
+        return;
+      }
+      
+      // Handle other text-based files
+      try {
+        const text = await file.text();
+        const preview = text.length > 2000 ? text.substring(0, 2000) + '...' : text;
+        setFileContent({ type: 'text', content: preview, fullContent: text });
+      } catch (error) {
+        setFileContent({ 
+          type: 'binary', 
+          content: `File: ${file.name}\nSize: ${(file.size / 1024).toFixed(2)} KB\nType: ${fileType}\n\nThis file will be processed by the server.` 
+        });
+      }
+    } catch (error) {
+      console.error('Error reading file:', error);
+      setFileContent({ 
+        type: 'error', 
+        content: `Error reading file: ${file.name}\n\nThe file will still be processed by the server.` 
+      });
+    } finally {
+      setFileContentLoading(false);
+    }
+  };
+
   const renderFilePreview = () => {
     if (!selectedFile) return null;
 
-    const isImage = selectedFile.type.startsWith('image/');
-    
-    if (isImage) {
-      const imageUrl = URL.createObjectURL(selectedFile);
+    if (fileContentLoading) {
       return (
         <div className="file-preview">
-          <img 
-            src={imageUrl} 
-            alt="Preview" 
-            className="preview-image"
-          />
+          <div className="spinner"></div>
+          <p>Loading file content...</p>
         </div>
       );
     }
 
-    return (
-      <div className="file-preview">
-        {getFileIcon(selectedFile)}
-        <div className="file-details">
-          <p className="filename">{selectedFile.name}</p>
-          <p className="filesize">{(selectedFile.size / 1024).toFixed(2)} KB</p>
-          <p className="filetype">{selectedFile.type || 'Unknown format'}</p>
+    if (!fileContent) {
+      return (
+        <div className="file-preview">
+          {getFileIcon(selectedFile)}
+          <div className="file-details">
+            <p className="filename">{selectedFile.name}</p>
+            <p className="filesize">{(selectedFile.size / 1024).toFixed(2)} KB</p>
+            <p className="filetype">{selectedFile.type || 'Unknown format'}</p>
+          </div>
         </div>
-      </div>
-    );
+      );
+    }
+
+    // Render based on content type
+    switch (fileContent.type) {
+      case 'image':
+        return (
+          <div className="file-preview">
+            <img 
+              src={fileContent.content} 
+              alt="Preview" 
+              className="preview-image"
+            />
+          </div>
+        );
+      
+      case 'csv':
+      case 'text':
+      case 'excel':
+      case 'pdf':
+      case 'binary':
+      case 'error':
+        return (
+          <div className="file-preview">
+            <div className="file-content-display">
+              <div className="file-header">
+                {getFileIcon(selectedFile)}
+                <span className="file-name">{selectedFile.name}</span>
+              </div>
+              <div className="file-content-text">
+                <pre>{fileContent.content}</pre>
+              </div>
+            </div>
+          </div>
+        );
+      
+      default:
+        return (
+          <div className="file-preview">
+            {getFileIcon(selectedFile)}
+            <div className="file-details">
+              <p className="filename">{selectedFile.name}</p>
+              <p className="filesize">{(selectedFile.size / 1024).toFixed(2)} KB</p>
+              <p className="filetype">{selectedFile.type || 'Unknown format'}</p>
+            </div>
+          </div>
+        );
+    }
   };
 
   if (result) {
@@ -133,7 +248,7 @@ function App() {
           <div className="header-content">
             <h1>Extraction Results</h1>
             <button 
-              onClick={() => {setResult(null); setSelectedFile(null); setProgress(0);}}
+              onClick={() => {setResult(null); setSelectedFile(null); setProgress(0); setFileContent(null); setFileContentLoading(false);}}
               className="extract-another-btn"
             >
               Extract Another File
@@ -206,8 +321,8 @@ function App() {
     <div className="App upload-view">
       <div className="upload-container">
         <div className="header">
-          <span className="main-icon">📤</span>
-          <h1>Annoybara Extractor</h1>
+          <span className="main-icon">🤐</span>
+          <h1>Annonybara Extractor</h1>
           <p>Upload your documents and extract text with AI precision</p>
         </div>
 
@@ -219,7 +334,7 @@ function App() {
               onChange={handleFileChange}
               className="file-input"
               id="file-input"
-              accept="image/*,.pdf,.xlsx,.xls,.csv"
+              accept="image/*,.pdf,.xlsx,.xls,.csv,.txt"  
             />
             <label htmlFor="file-input" className="upload-label">
               {selectedFile ? (
@@ -259,6 +374,10 @@ function App() {
               <div className="format-item">
                 <span className="format-icon">📋</span>
                 <span>CSV Files</span>
+              </div>
+              <div className="format-item">
+                <span className="format-icon">📝</span>
+                <span>Text Files: TXT</span>
               </div>
             </div>
           </div>
