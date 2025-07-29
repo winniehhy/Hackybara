@@ -88,7 +88,7 @@ class PIIDetector:
                         "num_predict": 10000
                     }
                 },
-                timeout=300
+                timeout=1000
             )
             response.raise_for_status()
             return response.json()["response"]
