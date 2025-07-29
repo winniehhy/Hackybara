@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
+import PIIDetectionPage from './result';
 
 function App() {
   const [selectedFile, setSelectedFile] = useState(null);
@@ -11,6 +12,7 @@ function App() {
   const [piiStatus, setPiiStatus] = useState(null);
   const [piiResults, setPiiResults] = useState(null);
   const [showPiiResults, setShowPiiResults] = useState(false);
+  const [showPiiEditor, setShowPiiEditor] = useState(false);
 
   const handleFileChange = (event) => {
     const file = event.target.files[0];
@@ -355,7 +357,10 @@ function App() {
         <span className="pii-status-text">{getStatusText()}</span>
         {piiStatus === 'completed' && piiResults && (
           <button 
-            onClick={() => setShowPiiResults(true)}
+            onClick={() => {
+              setShowPiiResults(false);
+              setShowPiiEditor(true); // Show the detailed PII editor
+            }}
             className="review-pii-btn"
           >
             Review Detected PII ({piiResults.pii_summary?.total_pii_found || 0} found)
@@ -447,6 +452,15 @@ function App() {
       </div>
     );
   };
+  if (showPiiEditor && piiResults && result) {
+    return (
+      <PIIDetectionPage
+        fileId={result.fileId}
+        piiData={piiResults}
+        extractedText={result.text}
+      />
+    );
+  }
 
   if (result) {
     return (
@@ -506,7 +520,7 @@ function App() {
               {renderPiiStatus()}
             </div>
             
-            {piiStatus === 'completed' && (
+            {/* {piiStatus === 'completed' && (
               <>
                 <span className="process-arrow">→</span>
                 <div className="process-step completed">
@@ -514,7 +528,7 @@ function App() {
                   <span className="step-text">Ready for Review</span>
                 </div>
               </>
-            )}
+            )} */}
           </div>
         </div>
 
