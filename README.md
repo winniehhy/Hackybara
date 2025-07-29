@@ -1,4 +1,7 @@
-# Hackybara
+<img width="347" height="288" alt="image" src="https://github.com/user-attachments/assets/1cfcbb2b-e536-471c-9008-c81c5f5de749" />
+
+
+# Annonybara
 
 ## 📝 Problem Statement: Data Privacy Protector
 
@@ -13,19 +16,15 @@ Annoybara is an all-in-one platform designed to streamline the process of extrac
 **Key Features:**
 
 - **Multi-format Support:** Users can upload images (JPEG, PNG, BMP, TIFF), PDFs (text-based and scanned), Excel spreadsheets, CSVs, and plain text files.
+  
 - **Automated Text Extraction:** The system leverages OCR (Optical Character Recognition) for images and scanned PDFs, and direct parsing for text-based documents and spreadsheets, ensuring accurate extraction of textual content from any supported file.
-- **PII Detection:** Using advanced machine learning models, Annoybara automatically scans the extracted text for a wide range of PII types, including names, addresses, phone numbers, emails, identification numbers, and more.
+  
+- **PII Detection:** Using LLM Gemma3 model and Regex, Annoybara automatically scans the extracted text for a wide range of PII types, including names, addresses, phone numbers, emails, identification numbers, and more.
+  
 - **Redaction Workflow:** Detected PII is highlighted for user review. Users can accept, reject, or manually adjust detected PII before finalizing the document, ensuring both automation and human oversight.
+  
 - **Audit Logging:** Every action, from file upload to PII review, is logged for transparency and compliance, supporting organizational data governance needs.
 - **User-Friendly Interface:** The React-based frontend provides a clean, intuitive workflow, making it easy for users of all technical backgrounds to protect sensitive data.
-
-**How It Works:**
-
-1. **Upload:** Users drag and drop or select files to upload.
-2. **Extraction:** The backend automatically extracts text using the best method for the file type (OCR for images, parsing for text-based files).
-3. **PII Detection:** Extracted text is analyzed for PII using a dedicated detection module.
-4. **Review & Redact:** Users review detected PII, make adjustments, and approve redactions.
-5. **Export:** The privacy-protected document is ready for safe sharing, with all actions logged for compliance.
 
 Annoybara reduces the risk of accidental data leaks, saves time, and helps organizations comply with data privacy regulations by automating the most tedious parts of the document privacy workflow.
 
