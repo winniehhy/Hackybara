@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, make_response
 from flask_cors import CORS
 import pytesseract
 from PIL import Image
@@ -18,15 +18,25 @@ import json
 from contextlib import contextmanager
 import threading
 import time
+from typing import Optional
 
 # Import PII detection from the separate file
 try:
-    from pii_detection import PIIDetector 
+    from pii_detection import PIIDetector
     PII_DETECTION_AVAILABLE = True
     print("PII Detection module loaded successfully")
 except ImportError as e:
     print(f"PII Detection module not available: {e}")
     PII_DETECTION_AVAILABLE = False
+    
+# Import encryption from the separate file
+try:
+    from encryption import encrypt_pii_from_reviewed
+    ENCRYPTION_AVAILABLE = True
+    print("Encryption module loaded successfully")
+except ImportError as e:
+    print(f"Encryption module not available: {e}")
+    ENCRYPTION_AVAILABLE = False
 
 app = Flask(__name__)
 CORS(app)
@@ -175,7 +185,22 @@ class DatabaseManager:
             yield conn
         finally:
             conn.close()
+            
+    def get_encrypted_record(self, file_id: str) -> Optional[dict]:
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT tokenized_text FROM pii_encrypted
+                WHERE file_id = ?
+                ORDER BY created_at DESC
+                LIMIT 1
+            """, (file_id,))
+            row = cursor.fetchone()
+            if row:
+                return {"tokenized_text": row[0]}
+            return None
 
+    
     def init_database(self):
         """Initialize the database with required tables"""
         with self.get_db_connection() as conn:
@@ -238,22 +263,17 @@ class DatabaseManager:
                     timestamp TEXT DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
-
-            # Create audit logs table
+            
             cursor.execute('''
-                CREATE TABLE IF NOT EXISTS audit_logs (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    activity_type TEXT NOT NULL,
-                    file_id TEXT,
-                    details TEXT,  -- JSON field with activity details
-                    status TEXT NOT NULL DEFAULT 'success',  -- success, error, warning
-                    error_message TEXT,
-                    metadata TEXT,  -- JSON field for additional metadata
-                    timestamp TEXT NOT NULL,
-                    FOREIGN KEY (file_id) REFERENCES documents (file_id)
-                )
-            ''')
-
+                  CREATE TABLE IF NOT EXISTS pii_encrypted (
+						id INTEGER PRIMARY KEY AUTOINCREMENT,
+						file_id TEXT NOT NULL,
+						tokenized_text TEXT NOT NULL,
+						encryption_metadata TEXT NOT NULL,
+						created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+				)
+			''')
+            
             # Create indexes for better performance
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_file_id ON documents (file_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_upload_timestamp ON documents (upload_timestamp)')
@@ -368,6 +388,29 @@ class DatabaseManager:
                 LIMIT ? OFFSET ?
             ''', (limit, offset))
             return cursor.fetchall()
+        
+    def save_encrypted_pii(self, file_id: str, tokenized_text: str, metadata_dict: dict):
+        metadata_json = json.dumps(metadata_dict)
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO pii_encrypted (file_id, tokenized_text, encryption_metadata)
+                 VALUES (?, ?, ?)
+                """, (file_id, tokenized_text, metadata_json))
+            conn.commit()
+
+    def get_reviewed(self, file_id):
+        """Retrieve reviewed PII data by file_id"""
+        with self.get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+              'SELECT reviewed_data FROM reviewed WHERE file_id = ? ORDER BY timestamp DESC LIMIT 1',
+              (file_id,)
+            )
+            row = cursor.fetchone()
+            if row is None:
+                raise ValueError(f"No reviewed data found for file_id: {file_id}")
+            return json.loads(row["reviewed_data"])  # reviewed_data is a JSON string
 
 # Initialize database and audit logger
 db_manager = DatabaseManager(DATABASE_PATH)
@@ -1207,6 +1250,76 @@ def health_check():
             'error': str(e)
         }), 500
 
+<<<<<<< HEAD
+=======
+DB_PATH = 'document_storage.db'
+
+@app.route("/api/pii/save", methods=["POST", "PUT"])
+def save_pii_results():
+    try:
+        data = request.get_json()
+        file_id = data.get("file_id")
+        reviewed_data = json.dumps(data)
+
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+
+        # Check if record exists
+        cursor.execute("SELECT 1 FROM reviewed WHERE file_id = ?", (file_id,))
+        exists = cursor.fetchone()
+        
+        if exists:
+            # Update existing record (PUT request)
+            cursor.execute("""
+                UPDATE reviewed 
+                SET reviewed_data = ?
+                WHERE file_id = ?
+            """, (reviewed_data, file_id))
+        else:
+            # Insert new record (POST request)
+            cursor.execute("""
+                INSERT INTO reviewed (file_id, reviewed_data)
+                VALUES (?, ?)
+            """, (file_id, reviewed_data))
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({"message": "PII data saved successfully"}), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    
+@app.route('/encrypt_pii', methods=['POST'])
+def encrypt_pii_endpoint():
+    data = request.get_json()
+    file_id = data.get('file_id')
+    if file_id is None:
+        return jsonify({"error": "file_id required"}), 400
+    encrypt_pii_from_reviewed(file_id)
+    return jsonify({"status": "success"}), 200
+
+@app.route('/get_tokenized_text', methods=['GET'])
+def get_tokenized_text():
+    file_id = request.args.get('file_id')
+    if not file_id:
+        return jsonify({"error": "file_id is required"}), 400
+
+    record = db_manager.get_encrypted_record(file_id)
+    if not record:
+        return jsonify({"error": "No tokenized data found for this file_id"}), 404
+
+    tokenized_text = record["tokenized_text"]
+    
+    # Create a file-like object in memory
+    file_buffer = io.StringIO(tokenized_text)
+    
+    response = make_response(file_buffer.getvalue())
+    response.headers.set('Content-Type', 'text/plain')
+    response.headers.set('Content-Disposition', f'attachment; filename={file_id}_tokenized.txt')
+    return response
+
+>>>>>>> qtay-encryption
 if __name__ == '__main__':
     print("Starting Flask application with audit logging...")
     print(f"Audit logs will be stored in: {AUDIT_LOGS_FOLDER}")
