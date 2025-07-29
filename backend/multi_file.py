@@ -134,11 +134,19 @@ class AuditLogger:
             filename = f"audit_log_export_{timestamp}.json"
 
         filepath = os.path.join(AUDIT_LOGS_FOLDER, filename)
+        print(f"DEBUG: Exporting all logs to: {filepath}")  # ADD THIS
 
         with self.get_db_connection() as conn:
             cursor = conn.cursor()
+            
+            # DEBUG: Check total count first
+            cursor.execute('SELECT COUNT(*) FROM audit_logs')
+            total_count = cursor.fetchone()[0]
+            print(f"DEBUG: Total logs in database: {total_count}")  # ADD THIS
+            
             cursor.execute('SELECT * FROM audit_logs ORDER BY timestamp DESC')
             logs = cursor.fetchall()
+            print(f"DEBUG: Retrieved {len(logs)} logs")  # ADD THIS
 
         # Convert to list of dictionaries
         audit_data = []
@@ -160,14 +168,79 @@ class AuditLogger:
         with open(filepath, 'w') as f:
             json.dump(export_data, f, indent=2)
 
+        print(f"DEBUG: Export completed. File size: {os.path.getsize(filepath)} bytes")  # ADD THIS
         print(f"Audit logs exported to {filepath}")
     
     def export_session_logs_to_json(self, file_id):
         """Export all audit logs for a given file_id to a JSON file"""
+        print(f"DEBUG: Starting export for file_id: {file_id}")  # ADD THIS
+        
         with self.get_db_connection() as conn:
             cursor = conn.cursor()
+            
+            # DEBUG: Check what's in the database first
+            cursor.execute('SELECT COUNT(*) FROM audit_logs WHERE file_id = ?', (file_id,))
+            total_count = cursor.fetchone()[0]
+            print(f"DEBUG: Found {total_count} logs in database for file_id: {file_id}")  # ADD THIS
+            
             cursor.execute('SELECT * FROM audit_logs WHERE file_id = ? ORDER BY timestamp ASC', (file_id,))
             logs = cursor.fetchall()
+            print(f"DEBUG: Retrieved {len(logs)} logs from query")  # ADD THIS
+
+        audit_data = []
+        for log in logs:
+            log_dict = dict(log)
+            print(f"DEBUG: Processing log - activity_type: {log_dict['activity_type']}, timestamp: {log_dict['timestamp']}")  # ADD THIS
+            
+            if log_dict['details']:
+                log_dict['details'] = json.loads(log_dict['details'])
+            if log_dict['metadata']:
+                log_dict['metadata'] = json.loads(log_dict['metadata'])
+            audit_data.append(log_dict)
+
+        export_data = {
+            "file_id": file_id,
+            "export_timestamp": datetime.now().isoformat(),
+            "total_logs": len(audit_data),
+            "logs": audit_data
+        }
+        
+        # Use timestamp in filename
+        timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"audit_log_{file_id}_{timestamp_str}.json"
+        filepath = os.path.join(AUDIT_LOGS_FOLDER, filename)
+        
+        print(f"DEBUG: Writing to file: {filepath}")  # ADD THIS
+        
+        with open(filepath, 'w') as f:
+            json.dump(export_data, f, indent=2)
+        
+        print(f"DEBUG: File written successfully. Size: {os.path.getsize(filepath)} bytes")  # ADD THIS
+        return filepath
+    def export_decrypt_logs_to_json(self, file_id):
+        """Export only decryption logs for a given file_id to a JSON file"""
+        print(f"DEBUG: Exporting decryption logs for file_id: {file_id}")
+
+        decryption_activities = [
+            "decryption_started",
+            "decryption_completed",
+            "decryption_failed",
+            "decryption_status_updated"
+        ]
+
+        with self.get_db_connection() as conn:
+            cursor = conn.cursor()
+            placeholders = ','.join('?' for _ in decryption_activities)
+            query = f'''
+                SELECT * FROM audit_logs
+                WHERE file_id = ?
+                AND activity_type IN ({placeholders})
+                ORDER BY timestamp ASC
+            '''
+            params = [file_id] + decryption_activities
+            cursor.execute(query, params)
+            logs = cursor.fetchall()
+            print(f"DEBUG: Retrieved {len(logs)} decryption logs")
 
         audit_data = []
         for log in logs:
@@ -184,12 +257,15 @@ class AuditLogger:
             "total_logs": len(audit_data),
             "logs": audit_data
         }
-         # Use timestamp in filename
+
         timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"audit_log_{file_id}_{timestamp_str}.json"
+        filename = f"decrypt_log_{file_id}_{timestamp_str}.json"
         filepath = os.path.join(AUDIT_LOGS_FOLDER, filename)
+
         with open(filepath, 'w') as f:
             json.dump(export_data, f, indent=2)
+
+        print(f"DEBUG: Decryption log exported to {filepath}")
         return filepath
 
 class DatabaseManager:
@@ -1358,6 +1434,7 @@ def decrypt_pii_endpoint():
                 details={"decrypted_text_length": len(decrypted_text)}
             )
             
+            audit_logger.export_decrypt_logs_to_json(file_id)
             return jsonify({
                 "message": "Decryption completed successfully",
                 "file_id": file_id,
