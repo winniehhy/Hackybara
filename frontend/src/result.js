@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './result.css';
 
-function PIIDetectionPage({ fileId, piiData: initialPiiData, extractedText }) {
+function PIIDetectionPage({ fileId, piiData: initialPiiData, extractedText, onBack }) {
   const [piiData, setPiiData] = useState(initialPiiData);
   const [loading, setLoading] = useState(!initialPiiData);
   const [error, setError] = useState(null);
@@ -12,6 +12,9 @@ function PIIDetectionPage({ fileId, piiData: initialPiiData, extractedText }) {
 	const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 	const [lastSavedState, setLastSavedState] = useState(null);
 	const [showEncryptButton, setShowEncryptButton] = useState(false);
+	const [isEncrypted, setIsEncrypted] = useState(false);
+	const [showKeyModal, setShowKeyModal] = useState(false);
+	const [decryptionKey, setDecryptionKey] = useState('');
 
   // Fetch PII data from backend if not provided
   useEffect(() => {
@@ -557,7 +560,16 @@ function PIIDetectionPage({ fileId, piiData: initialPiiData, extractedText }) {
 			if (!response.ok) throw new Error('Failed to trigger encryption');
 
 			const result = await response.json();
-			alert('Encryption successful!');
+			
+			// Show decryption key to user
+			if (result.decryption_key) {
+				setDecryptionKey(result.decryption_key);
+				setShowKeyModal(true);
+				setIsEncrypted(true);
+			} else {
+				alert('Encryption successful!');
+				setIsEncrypted(true);
+			}
 
 			// Step 2: Trigger file download
 			const downloadUrl = `http://localhost:5000/get_tokenized_text?file_id=${fileId}`;
@@ -578,6 +590,69 @@ function PIIDetectionPage({ fileId, piiData: initialPiiData, extractedText }) {
 		} catch (err) {
 			console.error('Encryption or download error:', err);
 			alert('Failed to encrypt or download. Please try again.');
+		}
+	};
+
+	const copyToClipboard = async (text) => {
+		try {
+			await navigator.clipboard.writeText(text);
+			alert('Decryption key copied to clipboard!');
+		} catch (err) {
+			console.error('Failed to copy to clipboard:', err);
+			alert('Failed to copy to clipboard. Please select and copy the key manually.');
+		}
+	};
+
+	const decryptText = async () => {
+		if (!fileId) {
+			alert('No file ID available for decryption');
+			return;
+		}
+
+		// Prompt user for decryption key
+		const decryptionKey = prompt('Enter your decryption key:');
+		if (!decryptionKey) {
+			alert('Decryption key is required');
+			return;
+		}
+
+		try {
+			const response = await fetch('http://localhost:5000/decrypt_pii', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ 
+					file_id: fileId,
+					decryption_key: decryptionKey
+				})
+			});
+
+			if (!response.ok) {
+				const errorData = await response.json();
+				throw new Error(errorData.error || 'Decryption failed');
+			}
+
+			const result = await response.json();
+			
+			// Show decrypted text in a modal or download it
+			const decryptedText = result.decrypted_text;
+			
+			// Create download link for decrypted text
+			const blob = new Blob([decryptedText], { type: 'text/plain' });
+			const url = window.URL.createObjectURL(blob);
+			
+			const link = document.createElement('a');
+			link.href = url;
+			link.download = `${fileId}_decrypted.txt`;
+			document.body.appendChild(link);
+			link.click();
+			link.remove();
+			window.URL.revokeObjectURL(url);
+			
+			alert(`✅ Decryption successful!\n\nDecrypted text (${result.text_length} characters) has been downloaded as "${fileId}_decrypted.txt"`);
+			
+		} catch (err) {
+			console.error('Decryption error:', err);
+			alert(`Decryption failed: ${err.message}`);
 		}
 	};
 
@@ -696,226 +771,292 @@ function PIIDetectionPage({ fileId, piiData: initialPiiData, extractedText }) {
     );
   }
 
-  return (
-		<div className="pii-detection-container">
-			<div className="pii-detection-content">
-				{/* Header */}
-				<div className="pii-detection-header">
-					<h1 className="pii-detection-title">PII Detection & Editing</h1>
-					<p className="pii-detection-subtitle">Review and modify detected personally identifiable information (PII)</p>
-					{hasUnsavedChanges && (
-						<div style={{
-							backgroundColor: '#fef3c7',
-							color: '#92400e',
-							padding: '0.5rem 1rem',
-							borderRadius: '0.5rem',
-							fontSize: '0.9rem',
-							marginTop: '0.5rem'
-						}}>
-							⚠️ You have unsaved changes. Click "Save Changes" to save your modifications.
-						</div>
-					)}
-				</div>
-
-				<div className="pii-detection-grid">
-					{/* Left Panel - Document with PII Highlights */}
-					<div className="document-panel">
-						<div className="panel-header">
-							<h2 className="panel-title">
-								📄 Document Text
-								<span className="panel-subtitle">
-									(Click on highlighted text to toggle PII detection)
-								</span>
-							</h2>
-						</div>
-
-						<div className="panel-content">
-							<div className="document-text-area">
-								<pre
-									className="document-text"
-									onMouseUp={handleTextSelection}
-								>
-									{renderHighlightedText()}
-								</pre>
-							</div>
-
-							{/* PII Type Selection Modal */}
-							{showPiiModal && (
-								<>
-									<div
-										className="pii-modal-overlay"
-										onClick={() => {
-											setShowPiiModal(false);
-											setSelectedText('');
-											window.getSelection().removeAllRanges();
-										}}
-									/>
-									<div
-										className="pii-modal fixed-modal"
-									>
-										<div className="pii-modal-title">
-											Categorize "{selectedText.length > 20 ? selectedText.substring(0, 20) + '...' : selectedText}" as:
-										</div>
-										<div className="pii-modal-options">
-											{[
-												{ type: 'name', icon: '👤', label: 'Name' },
-												{ type: 'phone', icon: '📞', label: 'Phone Number' },
-												{ type: 'address', icon: '📍', label: 'Address' },
-												{ type: 'email', icon: '📧', label: 'Email' },
-												{ type: 'ic', icon: '🆔', label: 'IC/NRIC' },
-												{ type: 'credit_card', icon: '💳', label: 'Credit Card' },
-												{ type: 'date_of_birth', icon: '🎂', label: 'Date of Birth' },
-												{ type: 'passport', icon: '📘', label: 'Passport' },
-												{ type: 'religion', icon: '🕊️', label: 'Religion' },
-												{ type: 'ethnicity', icon: '🌍', label: 'Ethnicity' },
-												{ type: 'other', icon: '📋', label: 'Other PII' }
-											].map(({ type, icon, label }) => (
-												<button
-													key={type}
-													onClick={() => addNewPiiMatch(type)}
-													className="pii-modal-option"
-													style={{ color: getPiiTypeColor(type) }}
-												>
-													<span>{icon}</span>
-													<span>{label}</span>
-												</button>
-											))}
-										</div>
-									</div>
-								</>
+  			return (
+			<>
+				<div className="pii-detection-container">
+					<div className="pii-detection-content">
+						{/* Header */}
+						<div className="pii-detection-header">
+							{onBack && (
+								<button className="back-button" onClick={onBack}>
+									← Back to Upload
+								</button>
 							)}
-
-							{/* Instructions */}
-							<div className="instructions-panel">
-								<h4 className="instructions-title">How to use:</h4>
-								<div className="instructions-list">
-									<div>• <span style={{ textDecoration: 'underline' }}>Underlined text</span> = Selected as PII (will be processed)</div>
-									<div>• <span style={{ textDecoration: 'line-through', color: '#6b7280' }}>Strikethrough text</span> = Deselected (will be ignored)</div>
-									<div>• Click on highlighted text to toggle selection</div>
-									<div>• <strong>Select any text </strong> to categorize it as new PII</div>
+							<h1 className="pii-detection-title">PII Detection & Editing</h1>
+							<p className="pii-detection-subtitle">Review and modify detected personally identifiable information (PII)</p>
+							{hasUnsavedChanges && (
+								<div style={{
+									backgroundColor: '#fef3c7',
+									color: '#92400e',
+									padding: '0.5rem 1rem',
+									borderRadius: '0.5rem',
+									fontSize: '0.9rem',
+									marginTop: '0.5rem'
+								}}>
+									⚠️ You have unsaved changes. Click "Save Changes" to save your modifications.
 								</div>
-							</div>
+							)}
 						</div>
-					</div>
 
-					{/* Right Panel - PII Summary */}
-					<div className="summary-panel">
-						{/* Summary Stats */}
-						<div className="summary-card">
-							<div className="panel-header">
-								<h2 className="panel-title">
-									📊 PII Summary
-								</h2>
-							</div>
-
-							<div className="summary-stats">
-								<div className="stats-grid">
-									<div className="stat-card blue">
-										<div className="stat-number blue">
-											{piiData.pii_summary.total_pii_found}
-										</div>
-										<div className="stat-label blue">Total PII Found</div>
-									</div>
-
-									<div className="stat-card green">
-										<div className="stat-number green">
-											{piiData.pii_summary.high_confidence_count}
-										</div>
-										<div className="stat-label green">High Confidence</div>
-									</div>
+						<div className="pii-detection-grid">
+							{/* Left Panel - Document with PII Highlights */}
+							<div className="document-panel">
+								<div className="panel-header">
+									<h2 className="panel-title">
+										📄 Document Text
+										<span className="panel-subtitle">
+											(Click on highlighted text to toggle PII detection)
+										</span>
+									</h2>
 								</div>
 
-								{/* PII Types Breakdown */}
-								<div className="pii-types-section">
-									<h3 className="pii-types-title">PII Types:</h3>
-									{getGroupedPiiTypes().length > 0 ? getGroupedPiiTypes().map(({ type, count, color, icon }) => (
-										<div key={type} className="pii-type-item"
-											style={{ borderColor: color + '40', backgroundColor: color + '10' }}>
-											<div className="pii-type-left">
-												<span className="pii-type-icon">{icon}</span>
-												<span className="pii-type-name" style={{ color }}>
-													{type.replace('_', ' ').toUpperCase()}
-												</span>
+								<div className="panel-content">
+									<div className="document-text-area">
+										<pre
+											className="document-text"
+											onMouseUp={handleTextSelection}
+										>
+											{renderHighlightedText()}
+										</pre>
+									</div>
+
+									{/* PII Type Selection Modal */}
+									{showPiiModal && (
+										<>
+											<div
+												className="pii-modal-overlay"
+												onClick={() => {
+													setShowPiiModal(false);
+													setSelectedText('');
+													window.getSelection().removeAllRanges();
+												}}
+											/>
+											<div
+												className="pii-modal fixed-modal"
+											>
+												<div className="pii-modal-title">
+													Categorize "{selectedText.length > 20 ? selectedText.substring(0, 20) + '...' : selectedText}" as:
+												</div>
+												<div className="pii-modal-options">
+													{[
+														{ type: 'name', icon: '👤', label: 'Name' },
+														{ type: 'phone', icon: '📞', label: 'Phone Number' },
+														{ type: 'address', icon: '📍', label: 'Address' },
+														{ type: 'email', icon: '📧', label: 'Email' },
+														{ type: 'ic', icon: '🆔', label: 'IC/NRIC' },
+														{ type: 'credit_card', icon: '💳', label: 'Credit Card' },
+														{ type: 'date_of_birth', icon: '🎂', label: 'Date of Birth' },
+														{ type: 'passport', icon: '📘', label: 'Passport' },
+														{ type: 'religion', icon: '🕊️', label: 'Religion' },
+														{ type: 'ethnicity', icon: '🌍', label: 'Ethnicity' },
+														{ type: 'other', icon: '📋', label: 'Other PII' }
+													].map(({ type, icon, label }) => (
+														<button
+															key={type}
+															onClick={() => addNewPiiMatch(type)}
+															className="pii-modal-option"
+															style={{ color: getPiiTypeColor(type) }}
+														>
+															<span>{icon}</span>
+															<span>{label}</span>
+														</button>
+													))}
+												</div>
 											</div>
-											<div className="pii-type-right">
-												<span className="pii-type-count" style={{ color }}>
-													{count}
-												</span>
-												<span className="pii-type-found">found</span>
-											</div>
-										</div>
-									)) : (
-										<div style={{ padding: '1rem', textAlign: 'center', color: '#6b7280' }}>
-											No PII types selected
-										</div>
+										</>
 									)}
+
+									{/* Instructions */}
+									<div className="instructions-panel">
+										<h4 className="instructions-title">How to use:</h4>
+										<div className="instructions-list">
+											<div>• <span style={{ textDecoration: 'underline' }}>Underlined text</span> = Selected as PII (will be processed)</div>
+											<div>• <span style={{ textDecoration: 'line-through', color: '#6b7280' }}>Strikethrough text</span> = Deselected (will be ignored)</div>
+											<div>• Click on highlighted text to toggle selection</div>
+											<div>• <strong>Select any text </strong> to categorize it as new PII</div>
+										</div>
+									</div>
 								</div>
 							</div>
-						</div>
 
-						{/* Processing Details */}
-						<div className="summary-card">
-							<div className="panel-header">
-								<h3 className="panel-title">Processing Details</h3>
-							</div>
+							{/* Right Panel - PII Summary */}
+							<div className="summary-panel">
+								{/* Summary Stats */}
+								<div className="summary-card">
+									<div className="panel-header">
+										<h2 className="panel-title">
+											📊 PII Summary
+										</h2>
+									</div>
 
-							<div className="processing-details">
-								<div className="processing-item">
-									<span className="processing-label">File ID:</span>
-									<span className="processing-value mono">
-										{fileId}
-									</span>
+									<div className="summary-stats">
+										<div className="stats-grid">
+											<div className="stat-card blue">
+												<div className="stat-number blue">
+													{piiData.pii_summary.total_pii_found}
+												</div>
+												<div className="stat-label blue">Total PII Found</div>
+											</div>
+
+											<div className="stat-card green">
+												<div className="stat-number green">
+													{piiData.pii_summary.high_confidence_count}
+												</div>
+												<div className="stat-label green">High Confidence</div>
+											</div>
+										</div>
+
+										{/* PII Types Breakdown */}
+										<div className="pii-types-section">
+											<h3 className="pii-types-title">PII Types:</h3>
+											{getGroupedPiiTypes().length > 0 ? getGroupedPiiTypes().map(({ type, count, color, icon }) => (
+												<div key={type} className="pii-type-item"
+													style={{ borderColor: color + '40', backgroundColor: color + '10' }}>
+													<div className="pii-type-left">
+														<span className="pii-type-icon">{icon}</span>
+														<span className="pii-type-name" style={{ color }}>
+															{type.replace('_', ' ').toUpperCase()}
+														</span>
+													</div>
+													<div className="pii-type-right">
+														<span className="pii-type-count" style={{ color }}>
+															{count}
+														</span>
+														<span className="pii-type-found">found</span>
+													</div>
+												</div>
+											)) : (
+												<div style={{ padding: '1rem', textAlign: 'center', color: '#6b7280' }}>
+													No PII types selected
+												</div>
+											)}
+										</div>
+									</div>
 								</div>
 
-								<div className="processing-item">
-									<span className="processing-label">Processing Time:</span>
-									<span className="processing-value">
-										{piiData.processing_duration?.toFixed(2) || 'N/A'}s
-									</span>
+								{/* Processing Details */}
+								<div className="summary-card">
+									<div className="panel-header">
+										<h3 className="panel-title">Processing Details</h3>
+									</div>
+
+									<div className="processing-details">
+										<div className="processing-item">
+											<span className="processing-label">File ID:</span>
+											<span className="processing-value mono">
+												{fileId}
+											</span>
+										</div>
+
+										<div className="processing-item">
+											<span className="processing-label">Processing Time:</span>
+											<span className="processing-value">
+												{piiData.processing_duration?.toFixed(2) || 'N/A'}s
+											</span>
+										</div>
+
+										<div className="processing-item">
+											<span className="processing-label">Timestamp:</span>
+											<span className="processing-value">
+												{piiData.processing_timestamp
+													? new Date(piiData.processing_timestamp).toLocaleString()
+													: 'N/A'
+												}
+											</span>
+										</div>
+									</div>
 								</div>
 
-								<div className="processing-item">
-									<span className="processing-label">Timestamp:</span>
-									<span className="processing-value">
-										{piiData.processing_timestamp
-											? new Date(piiData.processing_timestamp).toLocaleString()
-											: 'N/A'
-										}
-									</span>
+								{/* Actions */}
+								<div className="summary-card">
+									<div className="actions-panel">
+										<button
+											className={`action-button ${hasUnsavedChanges ? 'primary' : 'secondary'}`}
+											onClick={saveChanges}
+											style={{
+												backgroundColor: hasUnsavedChanges ? '#3b82f6' : undefined,
+												color: hasUnsavedChanges ? 'white' : undefined
+											}}
+										>
+											💾 Save Changes {hasUnsavedChanges && '*'}
+										</button>
+
+										<button className="action-button outline" onClick={resetToOriginal}>
+											🔄 Reset to Original
+										</button>
+
+										{showEncryptButton && (
+											<button className="action-button danger" onClick={encryptNow}>
+												🔐 Encrypt Now
+											</button>
+										)}
+
+										{/* <button className="action-button outline" onClick={decryptText}>
+											🔓 Decrypt Text
+										</button> */}
+									</div>
 								</div>
-							</div>
-						</div>
-
-						{/* Actions */}
-						<div className="summary-card">
-							<div className="actions-panel">
-								<button
-									className={`action-button ${hasUnsavedChanges ? 'primary' : 'secondary'}`}
-									onClick={saveChanges}
-									style={{
-										backgroundColor: hasUnsavedChanges ? '#3b82f6' : undefined,
-										color: hasUnsavedChanges ? 'white' : undefined
-									}}
-								>
-									💾 Save Changes {hasUnsavedChanges && '*'}
-								</button>
-
-								<button className="action-button outline" onClick={resetToOriginal}>
-									🔄 Reset to Original
-								</button>
-
-								{showEncryptButton && (
-									<button className="action-button danger" onClick={encryptNow}>
-										🔐 Encrypt Now
-									</button>
-								)}
 							</div>
 						</div>
 					</div>
 				</div>
-			</div>
-		</div>
-	);
-}
+
+				{/* Decryption Key Modal */}
+				{showKeyModal && (
+					<div className="key-modal-overlay" onClick={() => setShowKeyModal(false)}>
+						<div className="key-modal" onClick={(e) => e.stopPropagation()}>
+							<div className="key-modal-header">
+								<h3>🔐 Encryption Completed!</h3>
+								<button 
+									className="key-modal-close" 
+									onClick={() => setShowKeyModal(false)}
+								>
+									×
+								</button>
+							</div>
+							
+							<div className="key-modal-content">
+								<div className="key-warning">
+									⚠️ <strong>IMPORTANT:</strong> Save this decryption key securely!
+								</div>
+								
+								<div className="key-section">
+									<label>Decryption Key:</label>
+									<div className="key-display">
+										<input 
+											type="text" 
+											value={decryptionKey} 
+											readOnly 
+											className="key-input"
+											onClick={(e) => e.target.select()}
+										/>
+										<button 
+											className="copy-key-btn"
+											onClick={() => copyToClipboard(decryptionKey)}
+										>
+											📋 Copy
+										</button>
+									</div>
+								</div>
+								
+								<div className="key-note">
+									You will need this key to decrypt the text later.
+								</div>
+							</div>
+							
+							<div className="key-modal-footer">
+								<button 
+									className="key-modal-ok"
+									onClick={() => setShowKeyModal(false)}
+								>
+									OK
+								</button>
+							</div>
+						</div>
+					</div>
+				)}
+			</>
+		);
+	}
 
 export default PIIDetectionPage;

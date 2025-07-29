@@ -440,3 +440,179 @@
   transform: translateX(-50%);
   z-index: 9999;
 }
+
+/* Decryption Key Modal Styles */
+.key-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.key-modal {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  width: 90%;
+  max-width: 500px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.key-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.key-modal-header h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.key-modal-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: #6b7280;
+  padding: 4px;
+  border-radius: 4px;
+  transition: background-color 0.2s ease;
+}
+
+.key-modal-close:hover {
+  background-color: #f3f4f6;
+}
+
+.key-modal-content {
+  padding: 24px;
+}
+
+.key-warning {
+  background: #fef3c7;
+  border: 1px solid #f59e0b;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 20px;
+  color: #92400e;
+  font-weight: 500;
+}
+
+.key-section {
+  margin-bottom: 20px;
+}
+
+.key-section label {
+  display: block;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 8px;
+}
+
+.key-display {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.key-input {
+  flex: 1;
+  padding: 12px 16px;
+  border: 2px solid #d1d5db;
+  border-radius: 8px;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 0.875rem;
+  background-color: #f9fafb;
+  color: #374151;
+  cursor: text;
+}
+
+.key-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  background-color: white;
+}
+
+.copy-key-btn {
+  background: #3b82f6;
+  color: white;
+  border: none;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  white-space: nowrap;
+}
+
+.copy-key-btn:hover {
+  background: #2563eb;
+}
+
+.key-note {
+  color: #6b7280;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.key-modal-footer {
+  padding: 20px 24px;
+  border-top: 1px solid #e5e7eb;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.key-modal-ok {
+  background: #3b82f6;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.key-modal-ok:hover {
+  background: #2563eb;
+}
+
+/* Mobile Responsive for Key Modal */
+@media (max-width: 768px) {
+  .key-modal {
+    width: 95%;
+    margin: 20px;
+  }
+  
+  .key-modal-header {
+    padding: 16px 20px;
+  }
+  
+  .key-modal-content {
+    padding: 20px;
+  }
+  
+  .key-display {
+    flex-direction: column;
+    gap: 12px;
+  }
+  
+  .copy-key-btn {
+    width: 100%;
+  }
+  
+  .key-modal-footer {
+    padding: 16px 20px;
+  }
+}
