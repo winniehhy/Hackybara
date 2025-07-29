@@ -285,7 +285,7 @@ body {
   position: absolute;
   top: 0;
   left: 0;
-  /* background: #6b7280; */
+  background:transparent;
   color: black;
   border: none;
   padding: 10px 18px;

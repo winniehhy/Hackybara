@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
 import PIIDetectionPage from './result';
+import hackybaraLogo from './hackybara_logo.png'; 
 
 function App() {
   const [selectedFile, setSelectedFile] = useState(null);
@@ -639,7 +640,7 @@ function App() {
       <div className="main-menu">
         <div className="main-header">
           <div className="logo-container">
-            <img src="hackybara_logo.png" alt="Hackybara Logo" className="main-logo" />
+            <img src={hackybaraLogo} alt="Hackybara Logo" className="main-logo" />
           </div>
           <h1>Anonybara</h1>
           <p>Privacy Shouldn't Be Optional</p>
