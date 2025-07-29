@@ -34,11 +34,102 @@ CORS(app)
 # Configuration
 UPLOAD_FOLDER = 'uploads'
 DATABASE_PATH = 'document_storage.db'
+AUDIT_LOGS_FOLDER = 'audit_logs'
 
 # Create directories if they don't exist
-for folder in [UPLOAD_FOLDER]:
+for folder in [UPLOAD_FOLDER, AUDIT_LOGS_FOLDER]:
     if not os.path.exists(folder):
         os.makedirs(folder)
+
+class AuditLogger:
+    def __init__(self, db_path):
+        self.db_path = db_path
+    
+    @contextmanager
+    def get_db_connection(self):
+        """Context manager for database connections"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            yield conn
+        finally:
+            conn.close()
+    
+    def log_activity(self, activity_type, file_id=None, details=None, status="success", error_message=None, metadata=None):
+        """Log an activity to the audit log"""
+        with self.get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO audit_logs 
+                (activity_type, file_id, details, status, error_message, metadata, timestamp)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                activity_type,
+                file_id,
+                json.dumps(details) if details else None,
+                status,
+                error_message,
+                json.dumps(metadata) if metadata else None,
+                datetime.now().isoformat()
+            ))
+            conn.commit()
+            return cursor.lastrowid
+    
+    def get_audit_logs(self, limit=100, offset=0, file_id=None, activity_type=None):
+        """Retrieve audit logs with optional filtering"""
+        with self.get_db_connection() as conn:
+            cursor = conn.cursor()
+            query = 'SELECT * FROM audit_logs WHERE 1=1'
+            params = []
+            
+            if file_id:
+                query += ' AND file_id = ?'
+                params.append(file_id)
+            
+            if activity_type:
+                query += ' AND activity_type = ?'
+                params.append(activity_type)
+            
+            query += ' ORDER BY timestamp DESC LIMIT ? OFFSET ?'
+            params.extend([limit, offset])
+            
+            cursor.execute(query, params)
+            return cursor.fetchall()
+    
+    def export_audit_logs_to_json(self, filename=None):
+        """Export all audit logs to a JSON file"""
+        if not filename:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"audit_log_export_{timestamp}.json"
+        
+        filepath = os.path.join(AUDIT_LOGS_FOLDER, filename)
+        
+        with self.get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM audit_logs ORDER BY timestamp DESC')
+            logs = cursor.fetchall()
+        
+        # Convert to list of dictionaries
+        audit_data = []
+        for log in logs:
+            log_dict = dict(log)
+            # Parse JSON fields
+            if log_dict['details']:
+                log_dict['details'] = json.loads(log_dict['details'])
+            if log_dict['metadata']:
+                log_dict['metadata'] = json.loads(log_dict['metadata'])
+            audit_data.append(log_dict)
+        
+        export_data = {
+            "export_timestamp": datetime.now().isoformat(),
+            "total_logs": len(audit_data),
+            "logs": audit_data
+        }
+        
+        with open(filepath, 'w') as f:
+            json.dump(export_data, f, indent=2)
+        
+        return filepath
 
 class DatabaseManager:
     def __init__(self, db_path):
@@ -133,11 +224,29 @@ class DatabaseManager:
                 )
             ''')
             
+            # Create audit logs table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS audit_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    activity_type TEXT NOT NULL,
+                    file_id TEXT,
+                    details TEXT,  -- JSON field with activity details
+                    status TEXT NOT NULL DEFAULT 'success',  -- success, error, warning
+                    error_message TEXT,
+                    metadata TEXT,  -- JSON field for additional metadata
+                    timestamp TEXT NOT NULL,
+                    FOREIGN KEY (file_id) REFERENCES documents (file_id)
+                )
+            ''')
+            
             # Create indexes for better performance
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_file_id ON documents (file_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_upload_timestamp ON documents (upload_timestamp)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_extracted_text_file_id ON extracted_text (file_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_pii_results_file_id ON pii_results (file_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs (timestamp)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_audit_logs_file_id ON audit_logs (file_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_audit_logs_activity_type ON audit_logs (activity_type)')
             
             conn.commit()
             print("Database initialized successfully")
@@ -247,6 +356,7 @@ class DatabaseManager:
 
 # Initialize database
 db_manager = DatabaseManager(DATABASE_PATH)
+audit_logger = AuditLogger(DATABASE_PATH)
 
 def process_pii_detection(file_id, extracted_text):
     """
