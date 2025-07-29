@@ -432,3 +432,11 @@
 .pii-detection-btn:hover {
   background: #2563eb !important;
 }
+
+.fixed-modal {
+  position: fixed;
+  top: 20%;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9999;
+}
