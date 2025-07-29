@@ -143,7 +143,6 @@ function PIIDetectionPage({ fileId, piiData: initialPiiData, extractedText }) {
   // Handle text selection and word clicking
   const [selectedText, setSelectedText] = useState('');
   const [showPiiModal, setShowPiiModal] = useState(false);
-  const [modalPosition, setModalPosition] = useState({ x: 0, y: 0 });
 
   // Get PII type color
   const getPiiTypeColor = (type) => {
@@ -240,14 +239,7 @@ function PIIDetectionPage({ fileId, piiData: initialPiiData, extractedText }) {
     const selectedTextValue = selection.toString().trim();
     
     if (selectedTextValue && selectedTextValue.length >= 2) {
-      const range = selection.getRangeAt(0);
-      const rect = range.getBoundingClientRect();
-      
       setSelectedText(selectedTextValue);
-      setModalPosition({
-        x: rect.left + window.scrollX,
-        y: rect.bottom + window.scrollY + 10
-      });
       setShowPiiModal(true);
     }
   };
@@ -759,11 +751,7 @@ function PIIDetectionPage({ fileId, piiData: initialPiiData, extractedText }) {
 										}}
 									/>
 									<div
-										className="pii-modal"
-										style={{
-											left: `${modalPosition.x}px`,
-											top: `${modalPosition.y}px`
-										}}
+										className="pii-modal fixed-modal"
 									>
 										<div className="pii-modal-title">
 											Categorize "{selectedText.length > 20 ? selectedText.substring(0, 20) + '...' : selectedText}" as:
