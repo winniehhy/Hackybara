@@ -1,7 +1,16 @@
 <img width="347" height="288" alt="image" src="https://github.com/user-attachments/assets/1cfcbb2b-e536-471c-9008-c81c5f5de749" />
 
+---
 
-# Annonybara
+## 👤 Team Members
+
+- Winnie Heng Han Yee
+- Tay Qi Ter
+- Adya Zahila
+
+
+---
+# Anonybara
 
 ## 📝 Problem Statement: Data Privacy Protector
 
@@ -11,7 +20,7 @@ Unstructured documents such as PDFs, images, spreadsheets, and text files freque
 
 ## 💡 Solution Overview
 
-Annoybara is an all-in-one platform designed to streamline the process of extracting, detecting, and redacting PII from a wide range of document formats. Inspired by the simplicity and utility of platforms like iLovePDF, Annoybara empowers users to upload their files and receive automated, privacy-protected outputs in just a few steps.
+Anonybara is an all-in-one platform designed to streamline the process of extracting, detecting, and redacting PII from a wide range of document formats. Inspired by the simplicity and utility of platforms like iLovePDF, Anonybara empowers users to upload their files and receive automated, privacy-protected outputs in just a few steps.
 
 **Key Features:**
 
@@ -19,14 +28,14 @@ Annoybara is an all-in-one platform designed to streamline the process of extrac
   
 - **Automated Text Extraction:** The system leverages OCR (Optical Character Recognition) for images and scanned PDFs, and direct parsing for text-based documents and spreadsheets, ensuring accurate extraction of textual content from any supported file.
   
-- **PII Detection:** Using LLM Gemma3 model and Regex, Annoybara automatically scans the extracted text for a wide range of PII types, including names, addresses, phone numbers, emails, identification numbers, and more.
+- **PII Detection:** Using LLM Gemma3 model and Regex, Anonybara automatically scans the extracted text for a wide range of PII types, including names, addresses, phone numbers, emails, identification numbers, and more.
   
 - **Redaction Workflow:** Detected PII is highlighted for user review. Users can accept, reject, or manually adjust detected PII before finalizing the document, ensuring both automation and human oversight.
   
 - **Audit Logging:** Every action, from file upload to PII review, is logged for transparency and compliance, supporting organizational data governance needs.
 - **User-Friendly Interface:** The React-based frontend provides a clean, intuitive workflow, making it easy for users of all technical backgrounds to protect sensitive data.
 
-Annoybara reduces the risk of accidental data leaks, saves time, and helps organizations comply with data privacy regulations by automating the most tedious parts of the document privacy workflow.
+Anonybara reduces the risk of accidental data leaks, saves time, and helps organizations comply with data privacy regulations by automating the most tedious parts of the document privacy workflow.
 
 ---
 
@@ -46,19 +55,18 @@ Annoybara reduces the risk of accidental data leaks, saves time, and helps organ
 
 ---
 
-## 🚀 Quick Start: One-Shot Installation
+## 🚀 Installation
 
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/Hackybara.git
+git clone https://github.com/winniehhy/Hackybara.git
 cd Hackybara
 ```
 
 ### 2. Install Backend & Frontend Dependencies
 
 ```bash
-# Make the install script executable and run it
 chmod +x install_packages.sh
 bash install_packages.sh
 ```
@@ -74,7 +82,6 @@ docker run -d -v ollama:/root/.ollama -p 11434:11434 --name ollama ollama/ollama
 #### Nvidia GPU
 
 ```bash
-# Install NVIDIA Container Toolkit (Ubuntu/Debian)
 curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
     | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
 curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
@@ -97,10 +104,10 @@ docker run -d --gpus=all -v ollama:/root/.ollama -p 11434:11434 --name ollama ol
 docker run -d --device /dev/kfd --device /dev/dri -v ollama:/root/.ollama -p 11434:11434 --name ollama ollama/ollama:rocm
 ```
 
-#### Pull and Run a Model (e.g., Llama3)
+#### Pull and Run a Model (gemma3)
 
 ```bash
-docker exec -it ollama ollama run llama3
+docker exec -it ollama ollama run gemma3
 ```
 
 > For more models and details, see: [Ollama Library](https://ollama.com/library) and [Ollama GitHub](https://github.com/ollama/ollama)
