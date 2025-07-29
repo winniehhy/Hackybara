@@ -242,23 +242,105 @@ db_manager = DatabaseManager(DATABASE_PATH)
 def process_pii_detection(file_id, extracted_text):
     """
     Process PII detection in a separate thread after text extraction
+    Enhanced version with detailed messaging about detection methods
     """
     if not PII_DETECTION_AVAILABLE:
         print(f"PII Detection not available for file {file_id}")
         return
     
     try:
-        print(f"Starting PII detection for file {file_id}")
+        print(f"\n{'='*60}")
+        print(f"STARTING PII DETECTION FOR FILE: {file_id}")
+        print(f"{'='*60}")
+        print(f"Text length: {len(extracted_text):,} characters")
+        print(f"Sample text (first 200 chars): {repr(extracted_text[:200])}")
+        
         start_time = time.time()
         
-        # Initialize PII detector
+        # Initialize PII detector (using original unchanged code)
         detector = PIIDetector(model="gemma3")
         
-        # Detect PII
-        matches = detector.detect_pii(extracted_text, use_llm=True, debug=False)
+        # STEP 1: Run regex detection first to see what it finds
+        print(f"\n{'='*40}")
+        print("STEP 1: REGEX PATTERN DETECTION")
+        print(f"{'='*40}")
+        print("Checking for patterns: EMAIL, PHONE, IC, CREDIT_CARD, IP_ADDRESS, PASSPORT")
         
-        # Get summary
-        summary = detector.get_pii_summary(matches)
+        regex_matches = detector._regex_detect(extracted_text)
+        
+        if regex_matches:
+            print(f"✅ REGEX DETECTED {len(regex_matches)} matches:")
+            regex_by_type = {}
+            for match in regex_matches:
+                pii_type = match.pii_type.value
+                if pii_type not in regex_by_type:
+                    regex_by_type[pii_type] = []
+                regex_by_type[pii_type].append(match)
+            
+            for pii_type, matches in regex_by_type.items():
+                print(f"  📋 {pii_type.upper()}: {len(matches)} found")
+                for match in matches[:3]:  # Show first 3 examples
+                    print(f"    - '{match.text}' (confidence: {match.confidence:.2f})")
+                if len(matches) > 3:
+                    print(f"    ... and {len(matches) - 3} more")
+        else:
+            print("❌ No regex patterns detected")
+        
+        # STEP 2: Run LLM detection to find what regex missed
+        print(f"\n{'='*40}")
+        print("STEP 2: LLM DETECTION")
+        print(f"{'='*40}")
+        print("LLM will look for: NAMES, ADDRESSES, RELIGION, ETHNICITY, DATE_OF_BIRTH, etc.")
+        print("(Plus verify regex findings)")
+        
+        # Use the original detect_pii method unchanged
+        all_matches = detector.detect_pii(extracted_text, use_llm=True, debug=False)
+        
+        # Separate LLM-only matches from regex matches
+        llm_only_matches = []
+        regex_types = {'email', 'phone', 'ic', 'credit_card', 'ip_address', 'passport'}
+        
+        for match in all_matches:
+            if match.pii_type.value not in regex_types:
+                llm_only_matches.append(match)
+        
+        if llm_only_matches:
+            print(f"✅ LLM DETECTED {len(llm_only_matches)} additional matches:")
+            llm_by_type = {}
+            for match in llm_only_matches:
+                pii_type = match.pii_type.value
+                if pii_type not in llm_by_type:
+                    llm_by_type[pii_type] = []
+                llm_by_type[pii_type].append(match)
+            
+            for pii_type, matches in llm_by_type.items():
+                print(f"  🤖 {pii_type.upper()}: {len(matches)} found")
+                for match in matches[:3]:  # Show first 3 examples
+                    print(f"    - '{match.text}' (confidence: {match.confidence:.2f})")
+                if len(matches) > 3:
+                    print(f"    ... and {len(matches) - 3} more")
+        else:
+            print("❌ LLM found no additional PII beyond regex patterns")
+        
+        # STEP 3: Summary of combined results
+        print(f"\n{'='*40}")
+        print("STEP 3: COMBINED RESULTS SUMMARY")
+        print(f"{'='*40}")
+        
+        # Get summary using original method
+        summary = detector.get_pii_summary(all_matches)
+        
+        print(f"📊 TOTAL PII INSTANCES FOUND: {len(all_matches)}")
+        print(f"📊 HIGH CONFIDENCE MATCHES: {summary['high_confidence_count']}")
+        
+        print(f"\n📋 BREAKDOWN BY DETECTION METHOD:")
+        print(f"  🔍 Regex detected: {len(regex_matches)} instances")
+        print(f"  🤖 LLM detected: {len(llm_only_matches)} additional instances")
+        
+        print(f"\n📋 BREAKDOWN BY PII TYPE:")
+        for pii_type, count in summary['pii_types'].items():
+            detection_method = "🔍 REGEX" if pii_type in regex_types else "🤖 LLM"
+            print(f"  {detection_method} {pii_type.upper()}: {count}")
         
         # Convert matches to serializable format
         pii_matches = [{
@@ -266,17 +348,22 @@ def process_pii_detection(file_id, extracted_text):
             "type": match.pii_type.value,
             "start_pos": match.start_pos,
             "end_pos": match.end_pos,
-            "confidence": match.confidence
-        } for match in matches]
+            "confidence": match.confidence,
+            "detection_method": "regex" if match.pii_type.value in regex_types else "llm"
+        } for match in all_matches]
         
         processing_duration = time.time() - start_time
         
-        # Store results in database
+        # Store results in database (using original method)
         db_manager.store_pii_results(file_id, summary, pii_matches, processing_duration)
         
-        print(f"PII detection completed for file {file_id}. Found {len(matches)} PII instances in {processing_duration:.2f}s")
+        print(f"\n{'='*60}")
+        print(f"PII DETECTION COMPLETED FOR FILE: {file_id}")
+        print(f"⏱️  Processing time: {processing_duration:.2f} seconds")
+        print(f"💾 Results stored in database")
+        print(f"{'='*60}")
         
-        # Save detailed results to JSON file (optional)
+        # Save detailed results to JSON file with enhanced info
         output_dir = "pii_results"
         os.makedirs(output_dir, exist_ok=True)
         
@@ -284,17 +371,17 @@ def process_pii_detection(file_id, extracted_text):
             "file_id": file_id,
             "processing_timestamp": datetime.now().isoformat(),
             "processing_duration": processing_duration,
+            "detection_summary": {
+                "total_matches": len(all_matches),
+                "regex_matches": len(regex_matches),
+                "llm_only_matches": len(llm_only_matches),
+                "high_confidence_count": summary['high_confidence_count']
+            },
             "pii_summary": summary,
-            "matches": pii_matches,
+            "matches_with_detection_method": pii_matches,
             "original_text_length": len(extracted_text),
-            "matches": [{
-            "text": match.text,
-            "type": match.pii_type.value,
-            "start_pos": match.start_pos,
-            "end_pos": match.end_pos,
-            "confidence": match.confidence
-        } for match in matches],
-        "original_text": extracted_text
+            "regex_types_checked": list(regex_types),
+            "llm_types_possible": ['name', 'address', 'religion', 'ethnicity', 'date_of_birth', 'driver_license', 'bank_account', 'other']
         }
         
         output_filename = f"pii_results_{file_id}.json"
@@ -303,10 +390,27 @@ def process_pii_detection(file_id, extracted_text):
         with open(output_path, 'w') as f:
             json.dump(output_data, f, indent=2)
         
-        print(f"PII results saved to: {output_path}")
+        print(f"📁 Detailed results saved to: {output_path}")
+        
+        # Final diagnostic if no LLM matches found
+        if not llm_only_matches:
+            print(f"\n⚠️  DIAGNOSTIC: LLM found no additional PII")
+            print(f"   - Text length: {len(extracted_text):,} characters")
+            print(f"   - This might indicate:")
+            print(f"     • Text only contains PII detectable by regex")
+            print(f"     • LLM confidence threshold too high")
+            print(f"     • Text format not suitable for LLM analysis")
+            print(f"     • Ollama/LLM service issues")
+            
+            # Show a sample of what LLM is analyzing
+            sample_size = min(500, len(extracted_text))
+            print(f"   - Sample text being analyzed by LLM:")
+            print(f"     {repr(extracted_text[:sample_size])}")
         
     except Exception as e:
-        print(f"Error in PII detection for file {file_id}: {e}")
+        print(f"\n❌ ERROR in PII detection for file {file_id}: {e}")
+        import traceback
+        traceback.print_exc()
 
 def calculate_file_hash(file_path):
     """Calculate SHA-256 hash of a file"""
@@ -555,6 +659,7 @@ def extract_text():
         
         # Store extracted text in database
         character_count = len(extracted_text) if extracted_text else 0
+        
         if extracted_text or extraction_errors:
             db_manager.store_extracted_text(
                 file_id=file_id,
@@ -564,18 +669,57 @@ def extract_text():
                 extraction_confidence=extraction_confidence,
                 extraction_errors=extraction_errors
             )
-        
-        # *** TRIGGER PII DETECTION AFTER SUCCESSFUL EXTRACTION ***
+
+        # === DIAGNOSTIC BLOCK START ===
         if extracted_text and character_count > 0:
-            # Start PII detection in a separate thread to avoid blocking the response
-            pii_thread = threading.Thread(
-                target=process_pii_detection, 
-                args=(file_id, extracted_text)
-            )
-            pii_thread.daemon = True
-            pii_thread.start()
-            print(f"PII detection started in background for file {file_id}")
-        
+            print(f"\n{'='*50}")
+            print("TEXT EXTRACTION SUCCESSFUL - PREPARING PII DETECTION")
+            print(f"{'='*50}")
+            print(f"📄 File ID: {file_id}")
+            print(f"📄 Original filename: {file.filename}")
+            print(f"📄 File type: {mime_type}")
+            print(f"📄 Extraction method: {extraction_method}")
+            print(f"📊 Character count: {character_count:,}")
+            print(f"📊 File size: {file_size:,} bytes")
+            print(f"🔧 PII Detection Available: {PII_DETECTION_AVAILABLE}")
+            
+            if character_count > 100:
+                print(f"📝 Text preview (first 300 characters):")
+                print(f"   {repr(extracted_text[:300])}")
+                if len(extracted_text) > 300:
+                    print(f"   ... (and {len(extracted_text) - 300:,} more characters)")
+            
+            if PII_DETECTION_AVAILABLE:
+                print(f"🚀 Starting PII detection in background thread...")
+                # Start PII detection in a separate thread
+                pii_thread = threading.Thread(
+                    target=process_pii_detection, 
+                    args=(file_id, extracted_text)
+                )
+                pii_thread.daemon = True
+                pii_thread.start()
+                print(f"✅ PII detection thread started for file {file_id}")
+            else:
+                print("❌ PII detection module not available")
+                
+            pii_status = 'started' if PII_DETECTION_AVAILABLE and character_count > 0 else 'unavailable'
+            
+        else:
+            print(f"\n{'='*50}")
+            print("TEXT EXTRACTION FAILED OR NO TEXT FOUND")
+            print(f"{'='*50}")
+            print(f"📄 File ID: {file_id}")
+            print(f"📄 Original filename: {file.filename}")
+            print(f"📄 File type: {mime_type}")
+            print(f"📄 Extraction method: {extraction_method}")
+            print(f"📊 Character count: {character_count}")
+            print(f"❌ Extracted text: {repr(extracted_text[:100] if extracted_text else 'None')}")
+            print(f"❌ Extraction errors: {extraction_errors}")
+            
+            pii_status = 'not_applicable'
+
+        # === DIAGNOSTIC BLOCK END ===
+
         # Prepare response
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         

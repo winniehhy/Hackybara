@@ -1,0 +1,264 @@
+{
+  "file_id": "75f949e0-8cc6-45bb-bb03-e1fd6158f54c",
+  "processing_timestamp": "2025-07-29T11:51:00.668703",
+  "processing_duration": 0.017278432846069336,
+  "detection_summary": {
+    "total_matches": 13,
+    "regex_matches": 13,
+    "llm_only_matches": 0,
+    "high_confidence_count": 13
+  },
+  "pii_summary": {
+    "total_pii_found": 13,
+    "pii_types": {
+      "email": 3,
+      "ic": 5,
+      "passport": 5
+    },
+    "high_confidence_count": 13,
+    "matches": [
+      {
+        "text": "Alice@gmail.com",
+        "type": "email",
+        "position": [
+          43,
+          58
+        ],
+        "confidence": 0.95
+      },
+      {
+        "text": "900101-14-5678",
+        "type": "ic",
+        "position": [
+          64,
+          78
+        ],
+        "confidence": 0.95
+      },
+      {
+        "text": "A12345678",
+        "type": "passport",
+        "position": [
+          248,
+          257
+        ],
+        "confidence": 0.95
+      },
+      {
+        "text": "Muhammad@gmail.com",
+        "type": "email",
+        "position": [
+          406,
+          424
+        ],
+        "confidence": 0.95
+      },
+      {
+        "text": "850723-10-2345",
+        "type": "ic",
+        "position": [
+          430,
+          444
+        ],
+        "confidence": 0.95
+      },
+      {
+        "text": "B98765432",
+        "type": "passport",
+        "position": [
+          601,
+          610
+        ],
+        "confidence": 0.95
+      },
+      {
+        "text": "Priya@gmail.com",
+        "type": "email",
+        "position": [
+          750,
+          765
+        ],
+        "confidence": 0.95
+      },
+      {
+        "text": "930215-08-4567",
+        "type": "ic",
+        "position": [
+          771,
+          785
+        ],
+        "confidence": 0.95
+      },
+      {
+        "text": "C45678901",
+        "type": "passport",
+        "position": [
+          945,
+          954
+        ],
+        "confidence": 0.95
+      },
+      {
+        "text": "880912-07-8910",
+        "type": "ic",
+        "position": [
+          1079,
+          1093
+        ],
+        "confidence": 0.95
+      },
+      {
+        "text": "D32145678",
+        "type": "passport",
+        "position": [
+          1277,
+          1286
+        ],
+        "confidence": 0.95
+      },
+      {
+        "text": "950627-05-2233",
+        "type": "ic",
+        "position": [
+          1414,
+          1428
+        ],
+        "confidence": 0.95
+      },
+      {
+        "text": "E65432109",
+        "type": "passport",
+        "position": [
+          1597,
+          1606
+        ],
+        "confidence": 0.95
+      }
+    ]
+  },
+  "matches_with_detection_method": [
+    {
+      "text": "Alice@gmail.com",
+      "type": "email",
+      "start_pos": 43,
+      "end_pos": 58,
+      "confidence": 0.95,
+      "detection_method": "regex"
+    },
+    {
+      "text": "900101-14-5678",
+      "type": "ic",
+      "start_pos": 64,
+      "end_pos": 78,
+      "confidence": 0.95,
+      "detection_method": "regex"
+    },
+    {
+      "text": "A12345678",
+      "type": "passport",
+      "start_pos": 248,
+      "end_pos": 257,
+      "confidence": 0.95,
+      "detection_method": "regex"
+    },
+    {
+      "text": "Muhammad@gmail.com",
+      "type": "email",
+      "start_pos": 406,
+      "end_pos": 424,
+      "confidence": 0.95,
+      "detection_method": "regex"
+    },
+    {
+      "text": "850723-10-2345",
+      "type": "ic",
+      "start_pos": 430,
+      "end_pos": 444,
+      "confidence": 0.95,
+      "detection_method": "regex"
+    },
+    {
+      "text": "B98765432",
+      "type": "passport",
+      "start_pos": 601,
+      "end_pos": 610,
+      "confidence": 0.95,
+      "detection_method": "regex"
+    },
+    {
+      "text": "Priya@gmail.com",
+      "type": "email",
+      "start_pos": 750,
+      "end_pos": 765,
+      "confidence": 0.95,
+      "detection_method": "regex"
+    },
+    {
+      "text": "930215-08-4567",
+      "type": "ic",
+      "start_pos": 771,
+      "end_pos": 785,
+      "confidence": 0.95,
+      "detection_method": "regex"
+    },
+    {
+      "text": "C45678901",
+      "type": "passport",
+      "start_pos": 945,
+      "end_pos": 954,
+      "confidence": 0.95,
+      "detection_method": "regex"
+    },
+    {
+      "text": "880912-07-8910",
+      "type": "ic",
+      "start_pos": 1079,
+      "end_pos": 1093,
+      "confidence": 0.95,
+      "detection_method": "regex"
+    },
+    {
+      "text": "D32145678",
+      "type": "passport",
+      "start_pos": 1277,
+      "end_pos": 1286,
+      "confidence": 0.95,
+      "detection_method": "regex"
+    },
+    {
+      "text": "950627-05-2233",
+      "type": "ic",
+      "start_pos": 1414,
+      "end_pos": 1428,
+      "confidence": 0.95,
+      "detection_method": "regex"
+    },
+    {
+      "text": "E65432109",
+      "type": "passport",
+      "start_pos": 1597,
+      "end_pos": 1606,
+      "confidence": 0.95,
+      "detection_method": "regex"
+    }
+  ],
+  "original_text_length": 1687,
+  "regex_types_checked": [
+    "credit_card",
+    "ip_address",
+    "passport",
+    "ic",
+    "email",
+    "phone"
+  ],
+  "llm_types_possible": [
+    "name",
+    "address",
+    "religion",
+    "ethnicity",
+    "date_of_birth",
+    "driver_license",
+    "bank_account",
+    "other"
+  ]
+}
