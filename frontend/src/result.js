@@ -623,11 +623,11 @@ function PIIDetectionPage({ fileId, piiData: initialPiiData, extractedText }) {
                     }}
                   />
                   <div 
-                    className="pii-modal"
-                    style={{
-                      left: `${modalPosition.x}px`,
-                      top: `${modalPosition.y}px`
-                    }}
+                    className="pii-modal fixed-modal"
+                    // style={{
+                    //   left: `${modalPosition.x}px`,
+                    //   top: `${modalPosition.y}px`
+                    // }}
                   >
                     <div className="pii-modal-title">
                       Categorize "{selectedText.length > 20 ? selectedText.substring(0, 20) + '...' : selectedText}" as:
