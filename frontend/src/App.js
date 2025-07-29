@@ -468,7 +468,7 @@ function App() {
         <div className="results-header">
           <div className="header-content">
             <h1>Extraction Results</h1>
-            <button 
+            {/* <button 
               onClick={() => {
                 setResult(null); 
                 setSelectedFile(null); 
@@ -482,7 +482,7 @@ function App() {
               className="extract-another-btn"
             >
               Extract Another File
-            </button>
+            </button> */}
           </div>
           
           <div className="metadata-grid">

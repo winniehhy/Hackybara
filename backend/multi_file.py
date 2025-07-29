@@ -21,7 +21,7 @@ import time
 
 # Import PII detection from the separate file
 try:
-    from pii_detection import PIIDetector  # Assuming your PII file is named pii_detection.py
+    from pii_detection import PIIDetector 
     PII_DETECTION_AVAILABLE = True
     print("PII Detection module loaded successfully")
 except ImportError as e:
@@ -155,7 +155,7 @@ class AuditLogger:
         }
          # Use timestamp in filename
         timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"audit_log_{file_id}.json"
+        filename = f"audit_log_{file_id}_{timestamp_str}.json"
         filepath = os.path.join(AUDIT_LOGS_FOLDER, filename)
         with open(filepath, 'w') as f:
             json.dump(export_data, f, indent=2)

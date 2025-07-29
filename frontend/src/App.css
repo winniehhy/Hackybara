@@ -98,6 +98,7 @@ body {
   background: #f9fafb;
   border-radius: 8px;
   border: 1px solid #e5e7eb;
+  align-items: center;;
 }
 
 .file-info {
@@ -134,8 +135,8 @@ body {
   border: none;
   font-weight: 500;
   cursor: pointer;
-  transition: background-color 0.2s ease;
-  align-self: flex-start;
+  /* transition: background-color 0.2s ease;
+  align-self: flex-start; */
 }
 
 .upload-btn:hover:not(:disabled) {

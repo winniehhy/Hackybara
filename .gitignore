@@ -15,8 +15,10 @@
 # Backend Python cache and database
 /backend/__pycache__/
 /backend/document_storage.db
-
 /backend/ocr_env/
+/backend/audit_logs/
+/backend/pii_results/
+
 /frontend/node_modules/
 
 # misc
