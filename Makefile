@@ -1,25 +1,9 @@
-.PHONY: build up down logs restart clean
+.PHONY: all backend frontend
 
-default: up
+all: backend frontend
 
-# Build the Docker images
-build:
-	docker compose -f docker-compose.yaml build  
+backend:
+    cd backend && source ocr_env/bin/activate && python multi_file.py
 
-# Run the Docker containers
-up:
-	docker compose -f docker-compose.yaml up -d
-
-# Stop and remove the Docker containers
-down:
-	docker compose -f docker-compose.yaml down
-
-logs:
-	docker compose -f docker-compose.yaml logs -f
-
-restart: down up
-
-# Clean up Docker containers, images, and volumes
-clean: down
-	docker compose -f docker-compose.yaml rm -f
-	docker system prune -f
+frontend:
+    cd frontend && npm start
