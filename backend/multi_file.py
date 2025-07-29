@@ -105,6 +105,27 @@ class AuditLogger:
 
             cursor.execute(query, params)
             return cursor.fetchall()
+    
+    def get_session_timeline(self, file_id):
+        """Get complete timeline of actions for a specific file_id"""
+        with self.get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT activity_type, details, status, error_message, timestamp 
+                FROM audit_logs 
+                WHERE file_id = ? 
+                ORDER BY timestamp ASC
+            ''', (file_id,))
+            logs = cursor.fetchall()
+            
+            timeline = []
+            for log in logs:
+                log_dict = dict(log)
+                if log_dict['details']:
+                    log_dict['details'] = json.loads(log_dict['details'])
+                timeline.append(log_dict)
+            
+            return timeline
 
     def export_audit_logs_to_json(self, filename=None):
         """Export all audit logs to a JSON file"""
@@ -222,7 +243,9 @@ class DatabaseManager:
                     status TEXT DEFAULT 'uploaded',
                     metadata TEXT,
                     pii_processed BOOLEAN DEFAULT 0,
-                    pii_processing_timestamp DATETIME
+                    pii_processing_timestamp DATETIME,
+                    encryption_status TEXT DEFAULT 'not_started',
+                    encryption_timestamp DATETIME
                 )
             ''')
             # Create extracted_text table
@@ -275,19 +298,6 @@ class DatabaseManager:
                     metadata TEXT,  -- JSON field for additional metadata
                     timestamp TEXT NOT NULL,
                     FOREIGN KEY (file_id) REFERENCES documents (file_id)
-                )
-            ''')
-
-            # Create encryption_keys table (for future PII detection keys)
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS encryption_keys (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    key_id TEXT UNIQUE NOT NULL,
-                    key_type TEXT NOT NULL,  -- 'pii_detection', 'file_encryption', etc.
-                    encrypted_key TEXT NOT NULL,
-                    created_at DATETIME NOT NULL,
-                    last_used DATETIME,
-                    status TEXT DEFAULT 'active'
                 )
             ''')
             
@@ -409,7 +419,7 @@ class DatabaseManager:
             cursor.execute('''
                 SELECT file_id, original_filename, mime_type, file_size, 
                        upload_timestamp, extraction_method, status, character_count,
-                       pii_processed, pii_processing_timestamp
+                       pii_processed, pii_processing_timestamp, encryption_status, encryption_timestamp
                 FROM documents 
                 ORDER BY upload_timestamp DESC 
                 LIMIT ? OFFSET ?
@@ -424,6 +434,25 @@ class DatabaseManager:
                 INSERT INTO pii_encrypted (file_id, tokenized_text, encryption_metadata)
                  VALUES (?, ?, ?)
                 """, (file_id, tokenized_text, metadata_json))
+            
+            # Update document encryption status
+            cursor.execute('''
+                UPDATE documents 
+                SET encryption_status = 'completed', encryption_timestamp = ?
+                WHERE file_id = ?
+            ''', (datetime.now(), file_id))
+            
+            conn.commit()
+
+    def update_encryption_status(self, file_id: str, status: str):
+        """Update encryption status for a document"""
+        with self.get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE documents 
+                SET encryption_status = ?, encryption_timestamp = ?
+                WHERE file_id = ?
+            ''', (status, datetime.now(), file_id))
             conn.commit()
 
     def get_reviewed(self, file_id):
@@ -437,7 +466,7 @@ class DatabaseManager:
             row = cursor.fetchone()
             if row is None:
                 raise ValueError(f"No reviewed data found for file_id: {file_id}")
-            return json.loads(row["reviewed_data"])  # reviewed_data is a JSON string
+            return json.loads(row["reviewed_data"])
 
 # Initialize database and audit logger
 db_manager = DatabaseManager(DATABASE_PATH)
@@ -508,15 +537,6 @@ def process_pii_detection(file_id, extracted_text):
         output_dir = "pii_results"
         os.makedirs(output_dir, exist_ok=True)
 
-        # output_data = {
-        #     "file_id": file_id,
-        #     "processing_timestamp": datetime.now().isoformat(),
-        #     "processing_duration": processing_duration,
-        #     "pii_summary": summary,
-        #     "matches": pii_matches,
-        #     "original_text_length": len(extracted_text),
-        #     "original_text": extracted_text
-        # }
         output_data = {
             "file_id": file_id,
             "processing_timestamp": datetime.now().isoformat(),
@@ -980,68 +1000,332 @@ def save_pii_results():
         file_id = data.get("file_id")
         reviewed_data = json.dumps(data)
 
-        # Log PII save started
+        # Use a single database connection for all operations
+        conn = sqlite3.connect(DATABASE_PATH)
+        cursor = conn.cursor()
+        
+        try:
+            # Log PII save started
+            cursor.execute('''
+                INSERT INTO audit_logs 
+                (activity_type, file_id, details, status, error_message, metadata, timestamp)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                "pii_review_save_started",
+                file_id,
+                json.dumps({
+                    "data_keys": list(data.keys()) if data else None,
+                    "reviewed_data_size": len(reviewed_data)
+                }),
+                "success",
+                None,
+                json.dumps({"user_agent": request.headers.get('User-Agent'), "ip": request.remote_addr}),
+                datetime.now().isoformat()
+            ))
+
+            # Check if record exists
+            cursor.execute("SELECT 1 FROM reviewed WHERE file_id = ?", (file_id,))
+            exists = cursor.fetchone()
+            
+            if exists:
+                # Update existing record (PUT request)
+                cursor.execute("""
+                    UPDATE reviewed 
+                    SET reviewed_data = ?
+                    WHERE file_id = ?
+                """, (reviewed_data, file_id))
+                
+                # Log update
+                cursor.execute('''
+                    INSERT INTO audit_logs 
+                    (activity_type, file_id, details, status, error_message, metadata, timestamp)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    "pii_review_updated",
+                    file_id,
+                    json.dumps({"reviewed_data_size": len(reviewed_data)}),
+                    "success",
+                    None,
+                    None,
+                    datetime.now().isoformat()
+                ))
+            else:
+                # Insert new record (POST request)
+                cursor.execute("""
+                    INSERT INTO reviewed (file_id, reviewed_data)
+                    VALUES (?, ?)
+                """, (file_id, reviewed_data))
+                
+                # Log new save
+                cursor.execute('''
+                    INSERT INTO audit_logs 
+                    (activity_type, file_id, details, status, error_message, metadata, timestamp)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    "pii_review_created",
+                    file_id,
+                    json.dumps({"reviewed_data_size": len(reviewed_data)}),
+                    "success",
+                    None,
+                    None,
+                    datetime.now().isoformat()
+                ))
+
+            # Log successful save
+            cursor.execute('''
+                INSERT INTO audit_logs 
+                (activity_type, file_id, details, status, error_message, metadata, timestamp)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                "pii_review_saved",
+                file_id,
+                json.dumps({"reviewed_data_size": len(reviewed_data)}),
+                "success",
+                None,
+                None,
+                datetime.now().isoformat()
+            ))
+
+            conn.commit()
+            return jsonify({"message": "PII review data saved successfully"}), 200
+
+        except Exception as e:
+            # Log error
+            cursor.execute('''
+                INSERT INTO audit_logs 
+                (activity_type, file_id, details, status, error_message, metadata, timestamp)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                "pii_review_save_error",
+                file_id,
+                None,
+                "error",
+                str(e),
+                json.dumps({"user_agent": request.headers.get('User-Agent'), "ip": request.remote_addr}),
+                datetime.now().isoformat()
+            ))
+            conn.commit()
+            raise e
+        finally:
+            conn.close()
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/encrypt_pii', methods=['POST'])
+def encrypt_pii_endpoint():
+    file_id = None
+    try:
+        data = request.get_json()
+        file_id = data.get('file_id')
+        
+        if file_id is None:
+            audit_logger.log_activity(
+                "encryption_request_failed",
+                details={"error": "file_id required"},
+                status="error",
+                metadata={"user_agent": request.headers.get('User-Agent'), "ip": request.remote_addr}
+            )
+            return jsonify({"error": "file_id required"}), 400
+
+        # Check if encryption module is available
+        if not ENCRYPTION_AVAILABLE:
+            audit_logger.log_activity(
+                "encryption_unavailable",
+                file_id=file_id,
+                details={"reason": "Encryption module not available"},
+                status="error"
+            )
+            return jsonify({"error": "Encryption module not available"}), 500
+
+        # Log encryption started
         audit_logger.log_activity(
-            "pii_review_save_started",
+            "encryption_started",
             file_id=file_id,
-            details={
-                "data_keys": list(data.keys()) if data else None,
-                "reviewed_data_size": len(reviewed_data)
-            },
+            details={"encryption_module": "encrypt_pii_from_reviewed"},
             metadata={"user_agent": request.headers.get('User-Agent'), "ip": request.remote_addr}
         )
 
-        conn = sqlite3.connect(DATABASE_PATH)
-        cursor = conn.cursor()
-
-        # Check if record exists
-        cursor.execute("SELECT 1 FROM reviewed WHERE file_id = ?", (file_id,))
-        exists = cursor.fetchone()
+        # Update encryption status to 'in_progress'
+        db_manager.update_encryption_status(file_id, 'in_progress')
         
-        if exists:
-            # Update existing record (PUT request)
-            cursor.execute("""
-                UPDATE reviewed 
-                SET reviewed_data = ?
-                WHERE file_id = ?
-            """, (reviewed_data, file_id))
-        else:
-            # Insert new record (POST request)
-            cursor.execute("""
-                INSERT INTO reviewed (file_id, reviewed_data)
-                VALUES (?, ?)
-            """, (file_id, reviewed_data))
-
-        # cursor.execute("""
-        #     INSERT INTO reviewed (file_id, reviewed_data)
-        #     VALUES (?, ?)
-        # """, (file_id, reviewed_data))
-
-        conn.commit()
-        conn.close()
-
-        # Log successful save
         audit_logger.log_activity(
-            "pii_review_saved",
+            "encryption_status_updated",
             file_id=file_id,
-            details={"reviewed_data_size": len(reviewed_data)}
+            details={"status": "in_progress"}
         )
 
-        audit_logger.export_session_logs_to_json(file_id)
-        return jsonify({"message": "PII review data saved successfully"}), 200
+        start_time = time.time()
+        
+        # Perform encryption
+        try:
+            result = encrypt_pii_from_reviewed(file_id)
+            processing_duration = time.time() - start_time
+            
+            # Log successful encryption
+            audit_logger.log_activity(
+                "encryption_completed",
+                file_id=file_id,
+                details={
+                    "processing_duration": processing_duration,
+                    "result": result if isinstance(result, dict) else {"status": "completed"}
+                }
+            )
+            
+            # Update encryption status to 'completed'
+            db_manager.update_encryption_status(file_id, 'completed')
+            
+            audit_logger.log_activity(
+                "encryption_status_updated",
+                file_id=file_id,
+                details={"status": "completed"}
+            )
+            
+            return jsonify({
+                "status": "success",
+                "message": "PII encryption completed successfully",
+                "processing_duration": processing_duration,
+                "file_id": file_id
+            }), 200
+            
+        except Exception as encryption_error:
+            processing_duration = time.time() - start_time
+            
+            # Update encryption status to 'failed'
+            db_manager.update_encryption_status(file_id, 'failed')
+            
+            # Log encryption error
+            audit_logger.log_activity(
+                "encryption_failed",
+                file_id=file_id,
+                status="error",
+                error_message=str(encryption_error),
+                details={"processing_duration": processing_duration}
+            )
+            
+            audit_logger.log_activity(
+                "encryption_status_updated",
+                file_id=file_id,
+                details={"status": "failed"}
+            )
+            
+            return jsonify({
+                "error": "Encryption failed",
+                "details": str(encryption_error),
+                "file_id": file_id
+            }), 500
 
     except Exception as e:
-        # Log error
+        # Log critical error
         audit_logger.log_activity(
-            "pii_review_save_error",
-            file_id=file_id if 'file_id' in locals() else None,
+            "encryption_critical_error",
+            file_id=file_id,
             status="error",
             error_message=str(e),
             metadata={"user_agent": request.headers.get('User-Agent'), "ip": request.remote_addr}
         )
         return jsonify({"error": str(e)}), 500
 
-# New audit log endpoints
+@app.route('/get_tokenized_text', methods=['GET'])
+def get_tokenized_text():
+    file_id = request.args.get('file_id')
+    
+    try:
+        if not file_id:
+            audit_logger.log_activity(
+                "tokenized_download_failed",
+                details={"error": "file_id is required"},
+                status="error",
+                metadata={"user_agent": request.headers.get('User-Agent'), "ip": request.remote_addr}
+            )
+            return jsonify({"error": "file_id is required"}), 400
+
+        # Log download request started
+        audit_logger.log_activity(
+            "tokenized_download_started",
+            file_id=file_id,
+            metadata={"user_agent": request.headers.get('User-Agent'), "ip": request.remote_addr}
+        )
+
+        # Get encrypted record
+        record = db_manager.get_encrypted_record(file_id)
+        if not record:
+            audit_logger.log_activity(
+                "tokenized_download_failed",
+                file_id=file_id,
+                details={"error": "No tokenized data found"},
+                status="error"
+            )
+            return jsonify({"error": "No tokenized data found for this file_id"}), 404
+
+        tokenized_text = record["tokenized_text"]
+        
+        # Log successful data retrieval
+        audit_logger.log_activity(
+            "tokenized_data_retrieved",
+            file_id=file_id,
+            details={"tokenized_text_length": len(tokenized_text)}
+        )
+        
+        # Create a file-like object in memory
+        file_buffer = io.StringIO(tokenized_text)
+        
+        response = make_response(file_buffer.getvalue())
+        response.headers.set('Content-Type', 'text/plain')
+        response.headers.set('Content-Disposition', f'attachment; filename={file_id}_tokenized.txt')
+        
+        # Log successful download
+        audit_logger.log_activity(
+            "tokenized_download_completed",
+            file_id=file_id,
+            details={
+                "filename": f"{file_id}_tokenized.txt",
+                "file_size": len(tokenized_text),
+                "content_type": "text/plain"
+            }
+        )
+        
+        # Export session logs after successful download
+        audit_logger.export_session_logs_to_json(file_id)
+        
+        return response
+        
+    except Exception as e:
+        # Log download error
+        audit_logger.log_activity(
+            "tokenized_download_error",
+            file_id=file_id,
+            status="error",
+            error_message=str(e),
+            metadata={"user_agent": request.headers.get('User-Agent'), "ip": request.remote_addr}
+        )
+        return jsonify({"error": str(e)}), 500
+
+# New endpoint to get complete session timeline
+@app.route('/audit/session/<file_id>', methods=['GET'])
+def get_session_timeline(file_id):
+    """Get complete timeline of all actions for a specific file_id"""
+    try:
+        timeline = audit_logger.get_session_timeline(file_id)
+        
+        # Log timeline access
+        audit_logger.log_activity(
+            "session_timeline_accessed",
+            file_id=file_id,
+            details={"timeline_events": len(timeline)},
+            metadata={"user_agent": request.headers.get('User-Agent'), "ip": request.remote_addr}
+        )
+        
+        return jsonify({
+            'file_id': file_id,
+            'timeline': timeline,
+            'total_events': len(timeline)
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# Enhanced audit log endpoints
 @app.route('/audit/logs', methods=['GET'])
 def get_audit_logs():
     """Get audit logs with optional filtering"""
@@ -1146,12 +1430,17 @@ def get_audit_summary():
             # Get date range
             cursor.execute('SELECT MIN(timestamp), MAX(timestamp) FROM audit_logs')
             date_range = cursor.fetchone()
+            
+            # Get encryption statistics
+            cursor.execute("SELECT COUNT(*) FROM audit_logs WHERE activity_type LIKE '%encryption%'")
+            encryption_logs = cursor.fetchone()[0]
         
         return jsonify({
             'total_logs': total_logs,
             'status_breakdown': status_counts,
             'top_activities': activity_counts,
             'recent_activity_24h': recent_activity,
+            'encryption_related_logs': encryption_logs,
             'date_range': {
                 'earliest': date_range[0],
                 'latest': date_range[1]
@@ -1196,7 +1485,9 @@ def get_document(file_id):
             'character_count': doc['character_count'],
             'status': doc['status'],
             'pii_processed': bool(doc['pii_processed']),
-            'pii_processing_timestamp': doc['pii_processing_timestamp']
+            'pii_processing_timestamp': doc['pii_processing_timestamp'],
+            'encryption_status': doc.get('encryption_status', 'not_started'),
+            'encryption_timestamp': doc.get('encryption_timestamp')
         }
         
         if extracted_text:
@@ -1244,7 +1535,6 @@ def get_pii_results(file_id):
             'model_used': pii_results['model_used']
         }
         
-        audit_logger.export_session_logs_to_json(file_id)
         return jsonify(response)
     
     except Exception as e:
@@ -1280,7 +1570,7 @@ def list_documents():
 def health_check():
     """Health check endpoint"""
     try:
-        # Test database connection
+        # Test main database connection
         with db_manager.get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('SELECT COUNT(*) FROM documents')
@@ -1288,6 +1578,9 @@ def health_check():
             
             cursor.execute('SELECT COUNT(*) FROM pii_results')
             pii_count = cursor.fetchone()[0]
+            
+            cursor.execute('SELECT COUNT(*) FROM pii_encrypted')
+            encrypted_count = cursor.fetchone()[0]
             
             cursor.execute('SELECT COUNT(*) FROM audit_logs')
             audit_count = cursor.fetchone()[0]
@@ -1298,7 +1591,9 @@ def health_check():
             'documents_count': doc_count,
             'pii_results_count': pii_count,
             'audit_logs_count': audit_count,
+            'encrypted_files_count': encrypted_count,
             'pii_detection_available': PII_DETECTION_AVAILABLE,
+            'encryption_available': ENCRYPTION_AVAILABLE,
             'supported_formats': {
                 'images': ['JPEG', 'PNG', 'BMP', 'TIFF'],
                 'documents': ['PDF (text + scanned)', 'TXT'],
@@ -1310,41 +1605,13 @@ def health_check():
             'status': 'unhealthy',
             'error': str(e)
         }), 500
-    
-@app.route('/encrypt_pii', methods=['POST'])
-def encrypt_pii_endpoint():
-    data = request.get_json()
-    file_id = data.get('file_id')
-    if file_id is None:
-        return jsonify({"error": "file_id required"}), 400
-    encrypt_pii_from_reviewed(file_id)
-    return jsonify({"status": "success"}), 200
-
-@app.route('/get_tokenized_text', methods=['GET'])
-def get_tokenized_text():
-    file_id = request.args.get('file_id')
-    if not file_id:
-        return jsonify({"error": "file_id is required"}), 400
-
-    record = db_manager.get_encrypted_record(file_id)
-    if not record:
-        return jsonify({"error": "No tokenized data found for this file_id"}), 404
-
-    tokenized_text = record["tokenized_text"]
-    
-    # Create a file-like object in memory
-    file_buffer = io.StringIO(tokenized_text)
-    
-    response = make_response(file_buffer.getvalue())
-    response.headers.set('Content-Type', 'text/plain')
-    response.headers.set('Content-Disposition', f'attachment; filename={file_id}_tokenized.txt')
-    return response
 
 if __name__ == '__main__':
-    print("Starting Flask application with audit logging...")
+    print("Starting Flask application with comprehensive audit logging...")
     print(f"Audit logs will be stored in: {AUDIT_LOGS_FOLDER}")
     print("Available audit endpoints:")
     print("  GET /audit/logs - View audit logs with filtering")
+    print("  GET /audit/session/<file_id> - Get complete session timeline")
     print("  POST /audit/export - Export audit logs to JSON")
     print("  GET /audit/summary - Get audit statistics")
     print("Using database at:", DATABASE_PATH)
