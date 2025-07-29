@@ -31,7 +31,7 @@ except ImportError as e:
 
 # Import encryption from the separate file
 try:
-    from encryption import encrypt_pii_from_reviewed
+    from encryption import encrypt_pii_from_reviewed, decrypt_pii_text
     ENCRYPTION_AVAILABLE = True
     print("Encryption module loaded successfully")
 except ImportError as e:
@@ -1185,7 +1185,9 @@ def encrypt_pii_endpoint():
                 "status": "success",
                 "message": "PII encryption completed successfully",
                 "processing_duration": processing_duration,
-                "file_id": file_id
+                "file_id": file_id,
+                "decryption_key": result.get("decryption_key") if isinstance(result, dict) else None,
+                "key_warning": "⚠️ IMPORTANT: Save this decryption key securely! You will need it to decrypt the text later."
             }), 200
             
         except Exception as encryption_error:
@@ -1299,6 +1301,80 @@ def get_tokenized_text():
             error_message=str(e),
             metadata={"user_agent": request.headers.get('User-Agent'), "ip": request.remote_addr}
         )
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/decrypt_pii', methods=['POST'])
+def decrypt_pii_endpoint():
+    """Decrypt PII text using provided key"""
+    try:
+        data = request.get_json()
+        file_id = data.get('file_id')
+        decryption_key = data.get('decryption_key')
+        
+        if not file_id or not decryption_key:
+            audit_logger.log_activity(
+                "decryption_request_failed",
+                details={"error": "file_id and decryption_key required"},
+                status="error",
+                metadata={"user_agent": request.headers.get('User-Agent'), "ip": request.remote_addr}
+            )
+            return jsonify({"error": "file_id and decryption_key required"}), 400
+
+        # Check if encryption module is available
+        if not ENCRYPTION_AVAILABLE:
+            audit_logger.log_activity(
+                "decryption_unavailable",
+                file_id=file_id,
+                details={"reason": "Encryption module not available"},
+                status="error"
+            )
+            return jsonify({"error": "Encryption module not available"}), 500
+
+        # Log decryption started
+        audit_logger.log_activity(
+            "decryption_started",
+            file_id=file_id,
+            details={"decryption_module": "decrypt_pii_text"},
+            metadata={"user_agent": request.headers.get('User-Agent'), "ip": request.remote_addr}
+        )
+
+        # Perform decryption
+        try:
+            decrypted_text = decrypt_pii_text(file_id, decryption_key)
+            
+            if decrypted_text is None:
+                audit_logger.log_activity(
+                    "decryption_failed",
+                    file_id=file_id,
+                    details={"error": "Invalid decryption key or corrupted data"},
+                    status="error"
+                )
+                return jsonify({"error": "Decryption failed. Please check your decryption key."}), 400
+            
+            # Log successful decryption
+            audit_logger.log_activity(
+                "decryption_completed",
+                file_id=file_id,
+                details={"decrypted_text_length": len(decrypted_text)}
+            )
+            
+            return jsonify({
+                "message": "Decryption completed successfully",
+                "file_id": file_id,
+                "decrypted_text": decrypted_text,
+                "text_length": len(decrypted_text)
+            }), 200
+
+        except Exception as e:
+            audit_logger.log_activity(
+                "decryption_error",
+                file_id=file_id,
+                details={"error": str(e)},
+                status="error"
+            )
+            return jsonify({"error": f"Decryption error: {str(e)}"}), 500
+
+    except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 # New endpoint to get complete session timeline

@@ -18,9 +18,291 @@ body {
 .App {
   min-height: 100vh;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   padding: 20px;
+  padding-top: 40px;
+}
+
+/* Main Menu Styles */
+.main-menu {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  padding: 40px;
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.main-header {
+  text-align: center;
+  margin-bottom: 40px;
+}
+
+.logo-container {
+  margin-bottom: 20px;
+}
+
+.main-logo {
+  width: 120px;
+  height: 120px;
+  object-fit: contain;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.main-header h1 {
+  font-size: 2.5rem;
+  font-weight: bold;
+  color: #1f2937;
+  margin-bottom: 12px;
+}
+
+.main-header p {
+  color: #6b7280;
+  font-size: 1.1rem;
+}
+
+.menu-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-top: 40px;
+}
+
+.menu-option {
+  background: #f8fafc;
+  border: 2px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 32px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.menu-option:hover {
+  border-color: #3b82f6;
+  background: #eff6ff;
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px -5px rgba(59, 130, 246, 0.1);
+}
+
+.option-icon {
+  font-size: 3rem;
+  margin-bottom: 20px;
+}
+
+.option-content h3 {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #1f2937;
+  margin-bottom: 12px;
+}
+
+.option-content p {
+  color: #6b7280;
+  margin-bottom: 20px;
+  line-height: 1.6;
+}
+
+.option-content ul {
+  text-align: left;
+  list-style: none;
+  padding: 0;
+}
+
+.option-content li {
+  color: #4b5563;
+  margin-bottom: 8px;
+  padding-left: 20px;
+  position: relative;
+}
+
+.option-content li:before {
+  content: "✓";
+  position: absolute;
+  left: 0;
+  color: #10b981;
+  font-weight: bold;
+}
+
+/* Decryption Interface Styles */
+.decrypt-interface {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  padding: 40px;
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.decrypt-header {
+  text-align: center;
+  margin-bottom: 40px;
+  position: relative;
+  padding-top: 50px;
+}
+
+.decrypt-header h2 {
+  font-size: 2rem;
+  font-weight: bold;
+  color: #1f2937;
+  margin-bottom: 12px;
+}
+
+.decrypt-header p {
+  color: #6b7280;
+  font-size: 1rem;
+}
+
+.decrypt-form {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  margin-bottom: 32px;
+  max-width: 500px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.form-group label {
+  font-weight: 500;
+  color: #374151;
+  font-size: 0.9rem;
+}
+
+.form-input {
+  padding: 14px 18px;
+  border: 2px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 1rem;
+  transition: all 0.2s ease;
+  background-color: #f9fafb;
+  font-family: inherit;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.decrypt-button {
+  background: #10b981;
+  color: white;
+  border: none;
+  padding: 16px 28px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-top: 16px;
+  box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.decrypt-button:hover:not(:disabled) {
+  background: #059669;
+}
+
+.decrypt-button:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
+}
+
+.decrypt-result {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  padding: 24px;
+  margin-top: 24px;
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.decrypt-result h3 {
+  color: #166534;
+  margin-bottom: 16px;
+  font-size: 1.25rem;
+}
+
+.result-details {
+  margin-bottom: 20px;
+}
+
+.result-details p {
+  margin-bottom: 8px;
+  color: #374151;
+}
+
+.decrypted-preview {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 16px;
+}
+
+.decrypted-preview h4 {
+  color: #374151;
+  margin-bottom: 12px;
+  font-size: 1rem;
+}
+
+.preview-text {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 16px;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: #374151;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* Back Button Styles */
+.back-button {
+  position: absolute;
+  top: 0;
+  left: 0;
+  /* background: #6b7280; */
+  color: black;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.back-button:hover {
+  background: #4b5563;
 }
 
 /* Upload View Styles */
@@ -30,12 +312,15 @@ body {
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
   padding: 40px;
   width: 100%;
-  max-width: 700px;
+  max-width: 800px;
+  margin: 0 auto;
 }
 
 .upload-header {
   text-align: center;
   margin-bottom: 40px;
+  position: relative;
+  padding-top: 50px;
 }
 
 .upload-header h1 {
@@ -900,6 +1185,61 @@ body {
     flex-direction: column;
     align-items: flex-start;
     gap: 8px;
+  }
+
+  /* Main Menu Mobile Styles */
+  .main-menu {
+    padding: 20px;
+  }
+
+  .main-header h1 {
+    font-size: 2rem;
+  }
+
+  .main-logo {
+    width: 80px;
+    height: 80px;
+  }
+
+  .menu-options {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .menu-option {
+    padding: 24px;
+  }
+
+  .option-icon {
+    font-size: 2.5rem;
+  }
+
+  /* Decryption Interface Mobile Styles */
+  .decrypt-interface {
+    padding: 20px;
+  }
+
+  .decrypt-header h2 {
+    font-size: 1.5rem;
+  }
+
+  .decrypt-header {
+    padding-top: 20px;
+  }
+
+  .back-button {
+    position: relative;
+    margin-bottom: 16px;
+    top: auto;
+    left: auto;
+  }
+
+  .decrypt-form {
+    max-width: 100%;
+  }
+
+  .decrypt-result {
+    max-width: 100%;
   }
 }
 

@@ -13,6 +13,14 @@ function App() {
   const [piiResults, setPiiResults] = useState(null);
   const [showPiiResults, setShowPiiResults] = useState(false);
   const [showPiiEditor, setShowPiiEditor] = useState(false);
+  
+  // New state for main navigation
+  const [currentMode, setCurrentMode] = useState('main'); // 'main', 'encrypt', 'decrypt'
+  const [decryptFileId, setDecryptFileId] = useState('');
+  const [decryptKey, setDecryptKey] = useState('');
+  const [decryptResult, setDecryptResult] = useState(null);
+  const [decryptLoading, setDecryptLoading] = useState(false);
+  const [encryptionCompleted, setEncryptionCompleted] = useState(false);
 
   const handleFileChange = (event) => {
     const file = event.target.files[0];
@@ -102,6 +110,54 @@ function App() {
 
     // Start polling immediately
     poll();
+  };
+
+  // Decryption function
+  const handleDecrypt = async () => {
+    if (!decryptFileId || !decryptKey) {
+      alert('Please enter both File ID and Decryption Key');
+      return;
+    }
+
+    setDecryptLoading(true);
+    setDecryptResult(null);
+
+    try {
+      const response = await fetch('http://localhost:5000/decrypt_pii', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          file_id: decryptFileId,
+          decryption_key: decryptKey
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Decryption failed');
+      }
+
+      const result = await response.json();
+      setDecryptResult(result);
+      
+      // Download the decrypted text
+      const blob = new Blob([result.decrypted_text], { type: 'text/plain' });
+      const url = window.URL.createObjectURL(blob);
+      
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${decryptFileId}_decrypted.txt`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      
+    } catch (err) {
+      console.error('Decryption error:', err);
+      alert(`Decryption failed: ${err.message}`);
+    } finally {
+      setDecryptLoading(false);
+    }
   };
 
   const handleUpload = async () => {
@@ -577,12 +633,145 @@ function App() {
     );
   }
 
+  // Main navigation component
+  const renderMainMenu = () => {
+    return (
+      <div className="main-menu">
+        <div className="main-header">
+          <div className="logo-container">
+            <img src="hackybara_logo.png" alt="Hackybara Logo" className="main-logo" />
+          </div>
+          <h1>Anonybara</h1>
+          <p>Privacy Shouldn't Be Optional</p>
+        </div>
+        
+        <div className="menu-options">
+          <div className="menu-option" onClick={() => setCurrentMode('encrypt')}>
+            <div className="option-icon">🔒</div>
+            <div className="option-content">
+              <h3>Encrypt Text</h3>
+              <p>Upload a document, detect PII, and encrypt sensitive information</p>
+              <ul>
+                <li>Upload PDF, images, or text files</li>
+                <li>AI-powered PII detection</li>
+                <li>Select which PII to encrypt</li>
+                <li>Get encrypted file and decryption key</li>
+              </ul>
+            </div>
+          </div>
+          
+          <div className="menu-option" onClick={() => setCurrentMode('decrypt')}>
+            <div className="option-icon">🔓</div>
+            <div className="option-content">
+              <h3>Decrypt Text</h3>
+              <p>Decrypt previously encrypted text using your decryption key</p>
+              <ul>
+                <li>Enter File ID and decryption key</li>
+                <li>Restore original text with PII</li>
+                <li>Download decrypted file</li>
+                <li>Secure and fast decryption</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Decryption interface component
+  const renderDecryptInterface = () => {
+    return (
+      <div className="decrypt-interface">
+        <div className="decrypt-header">
+          <button className="back-button" onClick={() => setCurrentMode('main')}>
+            ← Back to Main Menu
+          </button>
+          <h2>🔓 Decrypt Text</h2>
+          <p>Enter your File ID and decryption key to restore the original text</p>
+        </div>
+        
+        <div className="decrypt-form">
+          <div className="form-group">
+            <label htmlFor="fileId">File ID:</label>
+            <input
+              type="text"
+              id="fileId"
+              value={decryptFileId}
+              onChange={(e) => setDecryptFileId(e.target.value)}
+              placeholder="Enter the File ID (e.g., 32-6171-48b0-8f5a-7960e6b69a8)"
+              className="form-input"
+            />
+          </div>
+          
+          <div className="form-group">
+            <label htmlFor="decryptKey">Decryption Key:</label>
+            <input
+              type="text"
+              id="decryptKey"
+              value={decryptKey}
+              onChange={(e) => setDecryptKey(e.target.value)}
+              placeholder="Enter your decryption key"
+              className="form-input"
+            />
+          </div>
+          
+          <button 
+            className="decrypt-button"
+            onClick={handleDecrypt}
+            disabled={decryptLoading || !decryptFileId || !decryptKey}
+          >
+            {decryptLoading ? '🔍 Decrypting...' : '🔓 Decrypt Text'}
+          </button>
+        </div>
+        
+        {decryptResult && (
+          <div className="decrypt-result">
+            <h3>✅ Decryption Successful!</h3>
+            <div className="result-details">
+              <p><strong>File ID:</strong> {decryptResult.file_id}</p>
+              <p><strong>Text Length:</strong> {decryptResult.text_length} characters</p>
+              <p><strong>Status:</strong> Decrypted text has been downloaded as "{decryptResult.file_id}_decrypted.txt"</p>
+            </div>
+            <div className="decrypted-preview">
+              <h4>Preview (first 200 characters):</h4>
+              <div className="preview-text">
+                {decryptResult.decrypted_text.substring(0, 200)}
+                {decryptResult.decrypted_text.length > 200 && '...'}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  if (currentMode === 'main') {
+    return renderMainMenu();
+  } else if (currentMode === 'decrypt') {
+    return renderDecryptInterface();
+  } else if (showPiiEditor && piiResults) {
+    return (
+      <PIIDetectionPage 
+        fileId={result?.file_id} 
+        piiData={piiResults} 
+        extractedText={fileContent}
+        onBack={() => {
+          setShowPiiEditor(false);
+          setCurrentMode('encrypt');
+        }}
+      />
+    );
+  }
+
   return (
     <div className="App">
       <div className="upload-container">
         <div className="upload-header">
-          <h1>Annoybara Extractor</h1>
-          <p>Upload documents to extract text and detect sensitive information</p>
+          <button className="back-button" onClick={() => setCurrentMode('main')}>
+            ← Back to Main Menu
+          </button>
+          <h1>🔒 Encrypt Text - Anonybara Extractor</h1>
+          <p>Upload documents to extract text, detect PII, and encrypt sensitive information</p>
         </div>
 
         <div className="upload-section">

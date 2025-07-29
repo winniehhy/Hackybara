@@ -6,6 +6,7 @@ from datetime import datetime
 from multi_file import DatabaseManager
 from typing import Optional
 import sqlite3
+import json
 
 DB_PATH = 'document_storage.db'
 db_manager = DatabaseManager(DB_PATH)
@@ -35,6 +36,88 @@ def get_latest_extracted_text_only(db_path: str) -> Optional[str]:
             return None
     except sqlite3.Error as e:
         print(f"Database error: {e}")
+        return None
+
+def get_encrypted_record_with_metadata(file_id: str) -> Optional[dict]:
+    """
+    Retrieves the encrypted record with metadata for a given file_id.
+    """
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT tokenized_text, encryption_metadata 
+            FROM pii_encrypted 
+            WHERE file_id = ?
+            ORDER BY created_at DESC 
+            LIMIT 1
+        """, (file_id,))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row:
+            return {
+                "tokenized_text": row[0],
+                "encryption_metadata": json.loads(row[1])
+            }
+        return None
+    except sqlite3.Error as e:
+        print(f"Database error: {e}")
+        return None
+
+def decrypt_pii_text(file_id: str, decryption_key: str) -> Optional[str]:
+    """
+    Decrypts the tokenized text using the provided decryption key.
+    
+    Args:
+        file_id: The file ID to decrypt
+        decryption_key: The base64-encoded decryption key
+    
+    Returns:
+        The decrypted original text, or None if decryption fails
+    """
+    try:
+        # Get encrypted record
+        encrypted_record = get_encrypted_record_with_metadata(file_id)
+        if not encrypted_record:
+            raise ValueError(f"No encrypted record found for file_id: {file_id}")
+        
+        tokenized_text = encrypted_record["tokenized_text"]
+        metadata = encrypted_record["encryption_metadata"]
+        
+        # Decode the key and nonce
+        try:
+            key = base64.b64decode(decryption_key)
+            nonce = base64.b64decode(metadata["nonce"])
+        except Exception as e:
+            raise ValueError(f"Invalid decryption key format: {e}")
+        
+        # Initialize AES-GCM
+        aesgcm = AESGCM(key)
+        tokens = metadata["tokens"]
+        
+        # Decrypt the text
+        decrypted_text = tokenized_text
+        
+        # Replace each token with its decrypted value
+        for token_id, token_data in tokens.items():
+            token_pattern = f"<enc:id={token_id};type={token_data['type']}>"
+            
+            if token_pattern in decrypted_text:
+                try:
+                    # Decrypt the ciphertext
+                    ciphertext = base64.b64decode(token_data["cipher"])
+                    decrypted_pii = aesgcm.decrypt(nonce, ciphertext, None)
+                    decrypted_text = decrypted_text.replace(token_pattern, decrypted_pii.decode())
+                except Exception as e:
+                    print(f"Failed to decrypt token {token_id}: {e}")
+                    # If decryption fails, keep the token as is
+                    continue
+        
+        return decrypted_text
+        
+    except Exception as e:
+        print(f"Decryption failed: {e}")
         return None
 
 def encrypt_pii_from_reviewed(file_id: str):
@@ -96,3 +179,10 @@ def encrypt_pii_from_reviewed(file_id: str):
     db_manager.save_encrypted_pii(file_id, encrypted_text, metadata_record)
 
     print(f"✅ Tokenized text and metadata saved to database for file_id: {file_id}")
+    
+    # Return the key for the user to save
+    return {
+        "file_id": file_id,
+        "decryption_key": base64.b64encode(key).decode(),
+        "message": "Encryption completed successfully. Save the decryption key securely!"
+    }
