@@ -1,11 +1,18 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import './App.css';
+import PIIDetectionPage from './result';
 
 function App() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [result, setResult] = useState(null);
   const [progress, setProgress] = useState(0);
+  const [fileContent, setFileContent] = useState(null);
+  const [fileContentLoading, setFileContentLoading] = useState(false);
+  const [piiStatus, setPiiStatus] = useState(null);
+  const [piiResults, setPiiResults] = useState(null);
+  const [showPiiResults, setShowPiiResults] = useState(false);
+  const [showPiiEditor, setShowPiiEditor] = useState(false);
 
   const handleFileChange = (event) => {
     const file = event.target.files[0];
@@ -13,6 +20,9 @@ function App() {
     setResult(null);
     setProgress(0);
     setFileContent(null);
+    setPiiStatus(null);
+    setPiiResults(null);
+    setShowPiiResults(false);
     
     if (file) {
       readFileContent(file);
@@ -43,6 +53,57 @@ function App() {
     return interval;
   };
 
+  // Poll for PII results with improved error handling and retry logic
+  const pollPiiResults = async (fileId) => {
+    const maxAttempts = 60; // 60 attempts * 2 seconds = 2 minutes max
+    let attempts = 0;
+
+    const poll = async () => {
+      try {
+        const apiUrl = process.env.NODE_ENV === 'production' 
+          ? `/api/document/${fileId}/pii` 
+          : `http://localhost:5000/document/${fileId}/pii`;
+          
+        console.log(`Polling PII results for ${fileId}, attempt ${attempts + 1}`);
+        const response = await fetch(apiUrl);
+        
+        if (response.ok) {
+          const piiData = await response.json();
+          console.log('PII detection completed:', piiData);
+          setPiiResults(piiData);
+          setPiiStatus('completed');
+          return;
+        } else if (response.status === 404) {
+          // PII results not ready yet
+          attempts++;
+          if (attempts < maxAttempts) {
+            console.log(`PII results not ready, will retry in 2 seconds (${attempts}/${maxAttempts})`);
+            setTimeout(poll, 2000); // Poll every 2 seconds
+          } else {
+            console.log('PII detection timeout after maximum attempts');
+            setPiiStatus('timeout');
+          }
+        } else {
+          console.error('PII polling error:', response.status, response.statusText);
+          setPiiStatus('error');
+        }
+      } catch (error) {
+        console.error('Error polling PII results:', error);
+        attempts++;
+        if (attempts < maxAttempts) {
+          console.log(`Network error, retrying in 2 seconds (${attempts}/${maxAttempts})`);
+          setTimeout(poll, 2000);
+        } else {
+          console.log('PII detection failed after maximum attempts');
+          setPiiStatus('error');
+        }
+      }
+    };
+
+    // Start polling immediately
+    poll();
+  };
+
   const handleUpload = async () => {
     if (!selectedFile) {
       alert('Please select a file first!');
@@ -60,6 +121,7 @@ function App() {
         ? '/api/extract' 
         : 'http://localhost:5000/extract';
         
+      console.log('Starting file upload and text extraction...');
       const response = await fetch(apiUrl, {
         method: 'POST',
         body: formData,
@@ -70,6 +132,8 @@ function App() {
       clearInterval(progressInterval);
       setProgress(100);
 
+      console.log('Server response:', data);
+
       if (data.success) {
         setResult({
           success: true,
@@ -78,16 +142,33 @@ function App() {
           timestamp: data.timestamp,
           fileType: data.file_type,
           extractionMethod: data.extraction_method,
-          characterCount: data.character_count
+          characterCount: data.character_count,
+          fileId: data.file_id,
+          piiDetectionStatus: data.pii_detection_status
         });
+
+        // Handle PII detection based on server response
+        if (data.pii_detection_status === 'started') {
+          console.log('PII detection started, beginning polling...');
+          setPiiStatus('processing');
+          pollPiiResults(data.file_id);
+        } else if (data.pii_detection_status === 'unavailable') {
+          console.log('PII detection unavailable');
+          setPiiStatus('unavailable');
+        } else {
+          console.log('PII detection not applicable');
+          setPiiStatus('not_applicable');
+        }
       } else {
         setResult({
           success: false,
           message: data.message || 'Text extraction failed',
           filename: data.filename,
           fileType: data.file_type,
-          extractionMethod: data.extraction_method
+          extractionMethod: data.extraction_method,
+          fileId: data.file_id
         });
+        setPiiStatus('not_applicable');
       }
     } catch (error) {
       clearInterval(progressInterval);
@@ -97,13 +178,11 @@ function App() {
         success: false,
         message: 'Failed to connect to text extraction service'
       });
+      setPiiStatus('error');
     } finally {
       setUploading(false);
     }
   };
-
-  const [fileContent, setFileContent] = useState(null);
-  const [fileContentLoading, setFileContentLoading] = useState(false);
 
   const readFileContent = async (file) => {
     if (!file) return null;
@@ -113,22 +192,19 @@ function App() {
     try {
       const fileType = file.type;
       
-      // Handle images
       if (fileType.startsWith('image/')) {
         const imageUrl = URL.createObjectURL(file);
         setFileContent({ type: 'image', content: imageUrl });
         return;
       }
       
-      // Handle CSV files
       if (fileType === 'text/csv' || file.name.toLowerCase().endsWith('.csv')) {
         const text = await file.text();
-        const lines = text.split('\n').slice(0, 20); // Show first 20 lines
+        const lines = text.split('\n').slice(0, 20);
         setFileContent({ type: 'csv', content: lines.join('\n'), fullContent: text });
         return;
       }
       
-      // Handle Excel files (show basic info since we can't parse without library)
       if (fileType.includes('sheet') || fileType.includes('excel') || 
           file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls')) {
         setFileContent({ 
@@ -138,7 +214,6 @@ function App() {
         return;
       }
       
-      // Handle PDF files (show basic info since we can't parse without library)
       if (fileType === 'application/pdf') {
         setFileContent({ 
           type: 'pdf', 
@@ -147,7 +222,6 @@ function App() {
         return;
       }
       
-      // Handle other text-based files
       try {
         const text = await file.text();
         const preview = text.length > 2000 ? text.substring(0, 2000) + '...' : text;
@@ -194,7 +268,6 @@ function App() {
       );
     }
 
-    // Render based on content type
     switch (fileContent.type) {
       case 'image':
         return (
@@ -241,6 +314,154 @@ function App() {
     }
   };
 
+  const renderPiiStatus = () => {
+    const getStatusIcon = () => {
+      switch (piiStatus) {
+        case 'processing':
+          return <div className="pii-spinner"></div>;
+        case 'completed':
+          return <span className="status-icon success">✅</span>;
+        case 'error':
+        case 'timeout':
+          return <span className="status-icon error">❌</span>;
+        case 'unavailable':
+        case 'not_applicable':
+          return <span className="status-icon disabled">⚪</span>;
+        default:
+          return <span className="status-icon pending">⏳</span>;
+      }
+    };
+
+    const getStatusText = () => {
+      switch (piiStatus) {
+        case 'processing':
+          return 'Detecting sensitive information...';
+        case 'completed':
+          return 'PII Detection Complete';
+        case 'error':
+          return 'PII Detection Failed';
+        case 'timeout':
+          return 'PII Detection Timeout';
+        case 'unavailable':
+          return 'PII Detection Unavailable';
+        case 'not_applicable':
+          return 'No text to analyze';
+        default:
+          return 'Waiting for text extraction...';
+      }
+    };
+
+    return (
+      <div className="pii-status-item">
+        {getStatusIcon()}
+        <span className="pii-status-text">{getStatusText()}</span>
+        {piiStatus === 'completed' && piiResults && (
+          <button 
+            onClick={() => {
+              setShowPiiResults(false);
+              setShowPiiEditor(true); // Show the detailed PII editor
+            }}
+            className="review-pii-btn"
+          >
+            Review Detected PII ({piiResults.pii_summary?.total_pii_found || 0} found)
+          </button>
+        )}
+      </div>
+    );
+  };
+
+  const renderPiiModal = () => {
+    if (!showPiiResults || !piiResults) return null;
+
+    const summary = piiResults.pii_summary || {};
+    const matches = piiResults.pii_matches || [];
+
+    return (
+      <div className="pii-modal-overlay" onClick={() => setShowPiiResults(false)}>
+        <div className="pii-modal" onClick={e => e.stopPropagation()}>
+          <div className="pii-modal-header">
+            <h3>PII Detection Results</h3>
+            <button 
+              className="pii-modal-close"
+              onClick={() => setShowPiiResults(false)}
+            >
+              ×
+            </button>
+          </div>
+          
+          <div className="pii-modal-content">
+            <div className="pii-summary">
+              <h4>Summary</h4>
+              <div className="pii-summary-grid">
+                <div className="pii-summary-item">
+                  <span className="pii-label">Total PII Found:</span>
+                  <span className="pii-value">{summary.total_pii_found || 0}</span>
+                </div>
+                <div className="pii-summary-item">
+                  <span className="pii-label">High Confidence:</span>
+                  <span className="pii-value">{summary.high_confidence_count || 0}</span>
+                </div>
+                <div className="pii-summary-item">
+                  <span className="pii-label">Processing Time:</span>
+                  <span className="pii-value">{piiResults.processing_duration?.toFixed(2)}s</span>
+                </div>
+                <div className="pii-summary-item">
+                  <span className="pii-label">Model Used:</span>
+                  <span className="pii-value">{piiResults.model_used || 'gemma3'}</span>
+                </div>
+              </div>
+            </div>
+
+            {matches && matches.length > 0 && (
+              <div className="pii-matches">
+                <h4>Detected PII Items ({matches.length})</h4>
+                <div className="pii-matches-list">
+                  {matches.map((match, index) => (
+                    <div key={index} className="pii-match-item">
+                      <div className="pii-match-header">
+                        <span className="pii-type">{match.type}</span>
+                        <span className={`pii-confidence ${match.confidence >= 0.8 ? 'high' : match.confidence >= 0.6 ? 'medium' : 'low'}`}>
+                          Confidence: {(match.confidence * 100).toFixed(1)}%
+                        </span>
+                      </div>
+                      <div className="pii-match-text">"{match.text}"</div>
+                      <div className="pii-match-position">
+                        Position: {match.start_pos} - {match.end_pos}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {(!matches || matches.length === 0) && (
+              <div className="no-pii-found">
+                <h4>✅ No PII Detected</h4>
+                <p>Great! No personally identifiable information was found in this document.</p>
+              </div>
+            )}
+
+            <div className="pii-modal-footer">
+              <p className="pii-disclaimer">
+                <strong>Note:</strong> This PII detection is automated and may not catch all sensitive information. 
+                Please review the document manually for complete data privacy compliance.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+  if (showPiiEditor && piiResults && result) {
+    return (
+      <PIIDetectionPage
+        fileId={result.fileId}
+        piiData={piiResults}
+        extractedText={result.text}
+      />
+    );
+  }
+
   if (result) {
     return (
       <div className="App results-view">
@@ -248,7 +469,16 @@ function App() {
           <div className="header-content">
             <h1>Extraction Results</h1>
             <button 
-              onClick={() => {setResult(null); setSelectedFile(null); setProgress(0); setFileContent(null); setFileContentLoading(false);}}
+              onClick={() => {
+                setResult(null); 
+                setSelectedFile(null); 
+                setProgress(0); 
+                setFileContent(null); 
+                setFileContentLoading(false);
+                setPiiStatus(null);
+                setPiiResults(null);
+                setShowPiiResults(false);
+              }}
               className="extract-another-btn"
             >
               Extract Another File
@@ -272,6 +502,33 @@ function App() {
               <span className="metadata-label">Characters</span>
               <span className="metadata-value">{result.characterCount?.toLocaleString() || 'N/A'}</span>
             </div>
+          </div>
+        </div>
+
+        {/* Process Flow Section */}
+        <div className="process-flow">
+          <h2>Processing Steps</h2>
+          <div className="process-steps">
+            <div className="process-step completed">
+              <span className="step-icon">✅</span>
+              <span className="step-text">Text Extracted</span>
+            </div>
+            
+            <span className="process-arrow">→</span>
+            
+            <div className={`process-step ${piiStatus === 'completed' ? 'completed' : piiStatus === 'processing' ? 'processing' : piiStatus === 'error' || piiStatus === 'timeout' ? 'error' : ''}`}>
+              {renderPiiStatus()}
+            </div>
+            
+            {/* {piiStatus === 'completed' && (
+              <>
+                <span className="process-arrow">→</span>
+                <div className="process-step completed">
+                  <span className="step-icon">✅</span>
+                  <span className="step-text">Ready for Review</span>
+                </div>
+              </>
+            )} */}
           </div>
         </div>
 
@@ -313,113 +570,100 @@ function App() {
             </div>
           </div>
         </div>
+
+        {/* PII Results Modal */}
+        {renderPiiModal()}
       </div>
     );
   }
 
   return (
-    <div className="App upload-view">
+    <div className="App">
       <div className="upload-container">
-        <div className="header">
-          <span className="main-icon">🤐</span>
-          <h1>Annonybara Extractor</h1>
-          <p>Upload your documents and extract text with AI precision</p>
+        <div className="upload-header">
+          <h1>Annoybara Extractor</h1>
+          <p>Upload documents to extract text and detect sensitive information</p>
         </div>
 
         <div className="upload-section">
-          {/* File Upload Area */}
-          <div className="file-upload-area">
+          <div className="file-input-container">
             <input
               type="file"
-              onChange={handleFileChange}
-              className="file-input"
               id="file-input"
-              accept="image/*,.pdf,.xlsx,.xls,.csv,.txt"  
+              onChange={handleFileChange}
+              accept=".pdf,.jpg,.jpeg,.png,.bmp,.tiff,.xlsx,.xls,.csv,.txt"
+              className="file-input"
             />
-            <label htmlFor="file-input" className="upload-label">
-              {selectedFile ? (
-                <div className="selected-file">
-                  {getFileIcon(selectedFile)}
-                  <div className="selected-file-info">
-                    <p className="selected-filename">{selectedFile.name}</p>
-                    <p className="selected-filesize">{(selectedFile.size / 1024).toFixed(2)} KB</p>
-                  </div>
-                </div>
-              ) : (
-                <div className="upload-prompt">
-                  <span className="upload-icon">📤</span>
-                  <p className="upload-text">Click to upload or drag and drop</p>
-                  <p className="upload-subtext">Maximum file size: 10MB</p>
-                </div>
-              )}
+            <label htmlFor="file-input" className="file-input-label">
+              <span className="upload-icon">📁</span>
+              Choose File
             </label>
           </div>
 
-          {/* Supported Formats */}
-          <div className="supported-formats">
-            <p className="formats-title">Supported Formats:</p>
-            <div className="formats-grid">
-              <div className="format-item">
-                <span className="format-icon">🖼️</span>
-                <span>Images: JPEG, PNG, BMP, TIFF</span>
+          {selectedFile && (
+            <div className="file-selected">
+              <div className="file-info">
+                {getFileIcon(selectedFile)}
+                <div className="file-details">
+                  <p className="filename">{selectedFile.name}</p>
+                  <p className="filesize">{(selectedFile.size / 1024).toFixed(2)} KB</p>
+                </div>
               </div>
-              <div className="format-item">
-                <span className="format-icon">📄</span>
-                <span>PDF Documents</span>
-              </div>
-              <div className="format-item">
-                <span className="format-icon">📊</span>
-                <span>Excel: XLS, XLSX</span>
-              </div>
-              <div className="format-item">
-                <span className="format-icon">📋</span>
-                <span>CSV Files</span>
-              </div>
-              <div className="format-item">
-                <span className="format-icon">📝</span>
-                <span>Text Files: TXT</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Progress Bar */}
-          {uploading && (
-            <div className="progress-section">
-              <div className="progress-info">
-                <span className="progress-text">Extracting text...</span>
-                <span className="progress-percent">{Math.round(progress)}%</span>
-              </div>
-              <div className="progress-bar">
-                <div 
-                  className="progress-fill"
-                  style={{ width: `${progress}%` }}
-                ></div>
-              </div>
-              <div className="processing-status">
-                <div className="spinner"></div>
-                <span>Processing your document...</span>
-              </div>
+              
+              <button
+                onClick={handleUpload}
+                disabled={uploading}
+                className="upload-btn"
+              >
+                {uploading ? 'Processing...' : 'Extract Text'}
+              </button>
             </div>
           )}
 
-          {/* Upload Button */}
-          <button 
-            onClick={handleUpload}
-            disabled={uploading || !selectedFile}
-            className="upload-button"
-          >
-            {uploading ? (
-              <>
-                <div className="button-spinner"></div>
-                <span>Processing...</span>
-              </>
-            ) : (
-              <>
-                <span className="button-icon">📤</span>
-                <span>Extract Text</span>
-              </>
-            )}
-          </button>
+          {uploading && (
+            <div className="progress-container">
+              <div className="progress-bar">
+                <div 
+                  className="progress-fill" 
+                  style={{ width: `${progress}%` }}
+                ></div>
+              </div>
+              <p className="progress-text">{Math.round(progress)}% Complete</p>
+            </div>
+          )}
+        </div>
+
+        {selectedFile && !uploading && (
+          <div className="file-preview-container">
+            <h3>File Preview</h3>
+            {renderFilePreview()}
+          </div>
+        )}
+
+        <div className="supported-formats">
+          <h3>Supported Formats</h3>
+          <div className="format-list">
+            <div className="format-item">
+              <span className="format-icon">🖼️</span>
+              <span>Images (JPEG, PNG, BMP, TIFF)</span>
+            </div>
+            <div className="format-item">
+              <span className="format-icon">📄</span>
+              <span>PDF (text-based and scanned)</span>
+            </div>
+            <div className="format-item">
+              <span className="format-icon">📊</span>
+              <span>Excel (XLS, XLSX)</span>
+            </div>
+            <div className="format-item">
+              <span className="format-icon">📊</span>
+              <span>CSV</span>
+            </div>
+            <div className="format-item">
+              <span className="format-icon">📄</span>
+              <span>Text files (TXT)</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>

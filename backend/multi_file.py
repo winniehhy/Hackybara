@@ -123,6 +123,15 @@ class DatabaseManager:
                     status TEXT DEFAULT 'active'
                 )
             ''')
+
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS reviewed (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    file_id INTEGER,
+                    reviewed_data TEXT,
+                    timestamp TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
             
             # Create indexes for better performance
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_file_id ON documents (file_id)')
@@ -721,6 +730,32 @@ def health_check():
             'status': 'unhealthy',
             'error': str(e)
         }), 500
+
+DB_PATH = 'document_storage.db'
+
+@app.route("/api/pii/save", methods=["POST"])
+def save_pii_results():
+    try:
+        data = request.get_json()
+        file_id = data.get("file_id")
+        reviewed_data = json.dumps(data)
+
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            INSERT INTO reviewed (file_id, reviewed_data)
+            VALUES (?, ?)
+        """, (file_id, reviewed_data))
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({"message": "PII review data saved successfully"}), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
