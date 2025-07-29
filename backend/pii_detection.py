@@ -85,7 +85,7 @@ class PIIDetector:
                     "options": {
                         "temperature": 0.1,  # Low temperature for consistent results
                         "top_p": 0.9,
-                        "num_predict": 1000
+                        "num_predict": 10000
                     }
                 },
                 timeout=300
@@ -95,6 +95,37 @@ class PIIDetector:
         except requests.exceptions.RequestException as e:
             print(f"Error calling Ollama: {e}")
             return ""
+    
+    def _find_actual_positions(self, text: str, pii_text: str, debug: bool = False) -> List[Tuple[int, int]]:
+        """
+        Find all actual positions of PII text in the original text
+        
+        Args:
+            text: Original text to search in
+            pii_text: PII text to find positions for
+            
+        Returns:
+            List of (start_pos, end_pos) tuples for all occurrences
+        """
+        positions = []
+        start = 0
+        
+        while True:
+            # Find the next occurrence
+            pos = text.find(pii_text, start)
+            if pos == -1:
+                break
+                
+            end_pos = pos + len(pii_text)
+            positions.append((pos, end_pos))
+            
+            if debug:
+                print(f"Found '{pii_text}' at positions {pos}-{end_pos}")
+            
+            # Move start position to avoid infinite loop
+            start = pos + 1
+            
+        return positions
     
     def _llm_detect(self, text: str, debug: bool = False) -> List[PIIMatch]:
         """Use LLM to detect PII that regex might miss"""
@@ -110,7 +141,7 @@ Text to analyze:
 
 Instructions:
 1. Identify all PII including:
-- Full names (especially Malaysian or regionally common names like "Ahmad bin Ali", "Tan Siew Ling", "Muthu Kumar", "A/P Rani", "Wang Chen", "Lee Ming", etc.)
+- Full names (including Malaysian or regionally common names like "Ahmad bin Ali", "Tan Siew Ling", "Muthu Kumar", "A/P Rani", "Wang Chen", "SITI BINTI ALIA", etc.)
 - Religious affiliation (e.g., Islam, Christianity, Hinduism, Buddhism, Taoism, Atheist, etc.)
 - Ethnic identity (e.g., Malay, Chinese, Indian, Bumiputera, Foreigner, Sabahan, Sarawakian, Bidayuh, etc.)
 - Addresses (house number, street, city, postcode, state, country)
@@ -131,14 +162,12 @@ Instructions:
         {{
             "text": "exact text found",
             "type": "name|address|date_of_birth|driver_license|passport|bank_account|email|phone|nric|ethnicity|religion|other",
-            "start_position": start_index,
-            "end_position": end_index,
             "confidence": confidence_score_0_to_1
         }}
     ]
 }}
 
-Only return the JSON, no other text.
+Note: Do NOT include start_position or end_position fields. Only return the JSON, no other text.
 """
         
         response = self._call_ollama(prompt)
@@ -181,17 +210,24 @@ Only return the JSON, no other text.
                     }
                     
                     pii_type = type_mapping.get(item.get("type", "other"), PIIType.OTHER)
+                    pii_text = item.get("text", "")
+                    confidence = item.get("confidence", 0.5)
                     
-                    matches.append(PIIMatch(
-                        text=item.get("text", ""),
-                        pii_type=pii_type,
-                        start_pos=item.get("start_position", 0),
-                        end_pos=item.get("end_position", 0),
-                        confidence=item.get("confidence", 0.5)
-                    ))
+                    # Find actual positions of this PII text
+                    positions = self._find_actual_positions(text, pii_text, debug=debug)
+                    
+                    # Create a match for each occurrence
+                    for start_pos, end_pos in positions:
+                        matches.append(PIIMatch(
+                            text=pii_text,
+                            pii_type=pii_type,
+                            start_pos=start_pos,
+                            end_pos=end_pos,
+                            confidence=confidence
+                        ))
                 
                 if debug:
-                    print(f"Parsed {len(matches)} LLM matches")
+                    print(f"Parsed {len(matches)} LLM matches with actual positions")
                 
                 return matches
                 
@@ -232,19 +268,29 @@ Only return the JSON, no other text.
         # Remove duplicates and filter by confidence
         filtered_matches = []
         seen_positions = set()
+        seen_texts = set()  # Track exact text matches
         
         for match in all_matches:
             if match.confidence >= confidence_threshold:
-                # Check for overlaps
+                # Check for exact text duplicates first
+                if match.text in seen_texts:
+                    if debug:
+                        print(f"Skipping duplicate text: '{match.text}' at position {match.start_pos}-{match.end_pos}")
+                    continue
+                
+                # Check for position overlaps
                 overlap = False
                 for start, end in seen_positions:
                     if (match.start_pos < end and match.end_pos > start):
                         overlap = True
+                        if debug:
+                            print(f"Skipping overlapping match: '{match.text}' at position {match.start_pos}-{match.end_pos}")
                         break
                 
                 if not overlap:
                     filtered_matches.append(match)
                     seen_positions.add((match.start_pos, match.end_pos))
+                    seen_texts.add(match.text)
         
         return sorted(filtered_matches, key=lambda x: x.start_pos)
     
