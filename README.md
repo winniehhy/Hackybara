@@ -39,6 +39,10 @@ Annoybara reduces the risk of accidental data leaks, saves time, and helps organ
 - **Database:** SQLite
 - **Encryption** aes-gcm
 
+## Presentation
+- **Link for Slides :** https://www.canva.com/design/DAGugv5LxqU/1FzVIqDKnh7kTit_8Cfpyw/edit?utm_content=DAGugv5LxqU&utm_campaign=designshare&utm_medium=link2&utm_source=sharebutton
+-  **Link for Demo Video :**
+
 ## 🚀 Quick Start: One-Shot Installation
 
 ### 1. Clone the Repository
