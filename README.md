@@ -115,7 +115,7 @@ docker exec -it ollama ollama run gemma3
 ```bash
 cd backend
 source ocr_env/bin/activate
-python multi_file_api.py
+python3 multi_file_api.py
 ```
 
 **Frontend (Terminal 2):**
