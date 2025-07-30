@@ -2,14 +2,6 @@
 
 ---
 
-## 👤 Team Members
-
-- Winnie Heng Han Yee
-- Tay Qi Ter
-- Adya Zahila
-
-
----
 # Anonybara
 
 ## 📝 Problem Statement: Data Privacy Protector
@@ -47,6 +39,9 @@ Anonybara reduces the risk of accidental data leaks, saves time, and helps organ
 - **PII Detection:** Ollama Gemma3
 - **Database:** SQLite
 - **Encryption** aes-gcm
+
+  <img width="938" height="492" alt="image" src="https://github.com/user-attachments/assets/bff8a65b-2459-4092-8059-96e7bb0ff245" />
+
 
 ## Presentation
 - **Link for Slides :** https://www.canva.com/design/DAGugv5LxqU/1FzVIqDKnh7kTit_8Cfpyw/edit?utm_content=DAGugv5LxqU&utm_campaign=designshare&utm_medium=link2&utm_source=sharebutton
@@ -135,4 +130,12 @@ npm start
 Open your browser at [http://localhost:3000](http://localhost:3000)
 
 ---
+
+## 👤 Team Members
+
+- Winnie Heng Han Yee
+- Tay Qi Ter
+- Adya Zahila
+
+
 
