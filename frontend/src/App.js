@@ -44,7 +44,7 @@ function App() {
     const type = file.type;
     if (type.startsWith('image/')) return <span className="file-icon">🖼️</span>;
     if (type === 'application/pdf') return <span className="file-icon">📄</span>;
-    if (type.includes('sheet') || type.includes('excel') || type === 'text/csv') return <span className="file-icon">📊</span>;
+    //if (type.includes('sheet') || type.includes('excel') || type === 'text/csv') return <span className="file-icon">📊</span>;
     return <span className="file-icon">📄</span>;
   };
 
@@ -255,21 +255,21 @@ function App() {
         return;
       }
       
-      if (fileType === 'text/csv' || file.name.toLowerCase().endsWith('.csv')) {
-        const text = await file.text();
-        const lines = text.split('\n').slice(0, 20);
-        setFileContent({ type: 'csv', content: lines.join('\n'), fullContent: text });
-        return;
-      }
+      // if (fileType === 'text/csv' || file.name.toLowerCase().endsWith('.csv')) {
+      //   const text = await file.text();
+      //   const lines = text.split('\n').slice(0, 20);
+      //   setFileContent({ type: 'csv', content: lines.join('\n'), fullContent: text });
+      //   return;
+      // }
       
-      if (fileType.includes('sheet') || fileType.includes('excel') || 
-          file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls')) {
-        setFileContent({ 
-          type: 'excel', 
-          content: `Excel file: ${file.name}\nSize: ${(file.size / 1024).toFixed(2)} KB\n\nThis Excel file will be processed by the server to extract its content.` 
-        });
-        return;
-      }
+      // if (fileType.includes('sheet') || fileType.includes('excel') || 
+      //     file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls')) {
+      //   setFileContent({ 
+      //     type: 'excel', 
+      //     content: `Excel file: ${file.name}\nSize: ${(file.size / 1024).toFixed(2)} KB\n\nThis Excel file will be processed by the server to extract its content.` 
+      //   });
+      //   return;
+      // }
       
       if (fileType === 'application/pdf') {
         setFileContent({ 
@@ -337,9 +337,9 @@ function App() {
           </div>
         );
       
-      case 'csv':
+      // case 'csv':
       case 'text':
-      case 'excel':
+      //case 'excel':
       case 'pdf':
       case 'binary':
       case 'error':
@@ -525,7 +525,7 @@ function App() {
         <div className="results-header">
           <div className="header-content">
             <h1>Extraction Results</h1>
-            {/* <button 
+            <button 
               onClick={() => {
                 setResult(null); 
                 setSelectedFile(null); 
@@ -539,7 +539,7 @@ function App() {
               className="extract-another-btn"
             >
               Extract Another File
-            </button> */}
+            </button>
           </div>
           
           <div className="metadata-grid">
@@ -781,7 +781,7 @@ function App() {
               type="file"
               id="file-input"
               onChange={handleFileChange}
-              accept=".pdf,.jpg,.jpeg,.png,.bmp,.tiff,.xlsx,.xls,.csv,.txt"
+              accept=".pdf,.jpg,.jpeg,.png,.txt"
               className="file-input"
             />
             <label htmlFor="file-input" className="file-input-label">
@@ -835,20 +835,20 @@ function App() {
           <div className="format-list">
             <div className="format-item">
               <span className="format-icon">🖼️</span>
-              <span>Images (JPEG, PNG, BMP, TIFF)</span>
+              <span>Images (JPEG, PNG)</span>
             </div>
             <div className="format-item">
               <span className="format-icon">📄</span>
               <span>PDF (text-based and scanned)</span>
             </div>
-            <div className="format-item">
+            {/* <div className="format-item">
               <span className="format-icon">📊</span>
               <span>Excel (XLS, XLSX)</span>
-            </div>
-            <div className="format-item">
+            </div> */}
+            {/* <div className="format-item">
               <span className="format-icon">📊</span>
               <span>CSV</span>
-            </div>
+            </div> */}
             <div className="format-item">
               <span className="format-icon">📄</span>
               <span>Text files (TXT)</span>

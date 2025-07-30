@@ -285,8 +285,8 @@ body {
   position: absolute;
   top: 0;
   left: 0;
-  background:transparent;
-  color: black;
+  background: transparent !important;
+  color: black !important;
   border: none;
   padding: 10px 18px;
   border-radius: 8px;
@@ -302,7 +302,8 @@ body {
 }
 
 .back-button:hover {
-  background: #4b5563;
+  background: #b4b4b4 !important; 
+  color: black !important;
 }
 
 /* Upload View Styles */

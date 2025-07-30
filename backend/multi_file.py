@@ -673,15 +673,15 @@ def detect_file_type(file_path):
         extension = file_path.lower().split('.')[-1]
         mime_types = {
             'pdf': 'application/pdf',
-            'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            'xls': 'application/vnd.ms-excel',
-            'csv': 'text/csv',
+            # 'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            # 'xls': 'application/vnd.ms-excel',
+            # 'csv': 'text/csv',
             'txt': 'text/plain',
             'jpg': 'image/jpeg',
             'jpeg': 'image/jpeg',
             'png': 'image/png',
-            'bmp': 'image/bmp',
-            'tiff': 'image/tiff'
+            # 'bmp': 'image/bmp',
+            # 'tiff': 'image/tiff'
         }
         return mime_types.get(extension, 'unknown')
 
@@ -762,31 +762,31 @@ def extract_text_from_scanned_pdf(file_path):
         print(f"Error in scanned PDF OCR: {e}")
         return None
 
-def extract_text_from_excel(file_path):
-    """Extract text from Excel files"""
-    try:
-        # Read all sheets
-        excel_file = pd.ExcelFile(file_path)
-        all_text = ""
+# def extract_text_from_excel(file_path):
+#     """Extract text from Excel files"""
+#     try:
+#         # Read all sheets
+#         excel_file = pd.ExcelFile(file_path)
+#         all_text = ""
 
-        for sheet_name in excel_file.sheet_names:
-            df = pd.read_excel(file_path, sheet_name=sheet_name)
-            all_text += f"--- Sheet: {sheet_name} ---\n"
-            all_text += df.to_string(index=False) + "\n\n"
+#         for sheet_name in excel_file.sheet_names:
+#             df = pd.read_excel(file_path, sheet_name=sheet_name)
+#             all_text += f"--- Sheet: {sheet_name} ---\n"
+#             all_text += df.to_string(index=False) + "\n\n"
 
-        return all_text.strip()
-    except Exception as e:
-        print(f"Error in Excel processing: {e}")
-        return None
+#         return all_text.strip()
+#     except Exception as e:
+#         print(f"Error in Excel processing: {e}")
+#         return None
 
-def extract_text_from_csv(file_path):
-    """Extract text from CSV files"""
-    try:
-        df = pd.read_csv(file_path)
-        return df.to_string(index=False)
-    except Exception as e:
-        print(f"Error in CSV processing: {e}")
-        return None
+# def extract_text_from_csv(file_path):
+#     """Extract text from CSV files"""
+#     try:
+#         df = pd.read_csv(file_path)
+#         return df.to_string(index=False)
+#     except Exception as e:
+#         print(f"Error in CSV processing: {e}")
+#         return None
 
 def extract_text_from_txt(file_path):
     """Extract text from plain text files"""
@@ -927,14 +927,14 @@ def extract_text():
                 extracted_text, method = extract_text_from_pdf(file_path)
                 extraction_method = f"PDF ({method})"
                 
-            elif mime_type in ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 
-                              'application/vnd.ms-excel']:
-                extracted_text = extract_text_from_excel(file_path)
-                extraction_method = "Excel Parser"
+            # elif mime_type in ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 
+            #                   'application/vnd.ms-excel']:
+            #     extracted_text = extract_text_from_excel(file_path)
+            #     extraction_method = "Excel Parser"
                 
-            elif mime_type == 'text/csv':
-                extracted_text = extract_text_from_csv(file_path)
-                extraction_method = "CSV Parser"
+            # elif mime_type == 'text/csv':
+            #     extracted_text = extract_text_from_csv(file_path)
+            #     extraction_method = "CSV Parser"
                 
             elif mime_type == 'text/plain':
                 extracted_text = extract_text_from_txt(file_path)
@@ -953,10 +953,10 @@ def extract_text():
                 return jsonify({
                     'error': f'Unsupported file type: {mime_type}',
                     'supported_types': [
-                        'Images (JPEG, PNG, BMP, TIFF)',
+                        'Images (JPEG, PNG)',
                         'PDF (text-based and scanned)',
-                        'Excel (XLS, XLSX)',
-                        'CSV',
+                        # 'Excel (XLS, XLSX)',
+                        # 'CSV',
                         'Text files (TXT)'
                     ]
                 }), 400
@@ -1750,7 +1750,7 @@ def health_check():
             'supported_formats': {
                 'images': ['JPEG', 'PNG', 'BMP', 'TIFF'],
                 'documents': ['PDF (text + scanned)', 'TXT'],
-                'spreadsheets': ['Excel (XLS, XLSX)', 'CSV']
+                # 'spreadsheets': ['Excel (XLS, XLSX)', 'CSV']
             }
         })
     except Exception as e:
