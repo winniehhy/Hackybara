@@ -1048,7 +1048,7 @@ function App() {
               type="file"
               id="file-input"
               onChange={handleFileChange}
-              accept=".pdf,.jpg,.jpeg,.png,.txt"
+              accept=".pdf,.png,.jpg,.jpeg,.txt,.xls,.xlsx,.csv"
               className="file-input"
             />
             <label htmlFor="file-input" className="file-input-label">

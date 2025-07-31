@@ -131,7 +131,8 @@ class PIIDetector:
         """Use LLM to detect PII that regex might miss"""
         
         # Take only first 2000 characters to avoid overwhelming the LLM
-        text_sample = text[:2000] if len(text) > 2000 else text
+        # text_sample = text[:2000] if len(text) > 2000 else text
+        text_sample = text[:500] if len(text) > 500 else text
         
         prompt = f"""
 You are a data privacy expert. Analyze the following text and identify all personally identifiable information (PII).
