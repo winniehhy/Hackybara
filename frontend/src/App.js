@@ -23,6 +23,22 @@ function App() {
   const [decryptLoading, setDecryptLoading] = useState(false);
   const [encryptionCompleted, setEncryptionCompleted] = useState(false);
 
+  // Audit summary state
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditError, setAuditError] = useState(null);
+  const [showAuditSummaryTable, setShowAuditSummaryTable] = useState(false);
+  const [showAuditModal, setShowAuditModal] = useState(false);
+  const [auditFilters, setAuditFilters] = useState({
+    file_id: '',
+    activity_type: '',
+    limit: 500,
+    offset: 0
+  });
+
+  // State to control visibility of "View Audit Log" button
+  const [showAuditButton, setShowAuditButton] = useState(false);
+
   const handleFileChange = (event) => {
     const file = event.target.files[0];
     setSelectedFile(file);
@@ -44,7 +60,6 @@ function App() {
     const type = file.type;
     if (type.startsWith('image/')) return <span className="file-icon">🖼️</span>;
     if (type === 'application/pdf') return <span className="file-icon">📄</span>;
-    //if (type.includes('sheet') || type.includes('excel') || type === 'text/csv') return <span className="file-icon">📊</span>;
     return <span className="file-icon">📄</span>;
   };
 
@@ -62,9 +77,8 @@ function App() {
     return interval;
   };
 
-  // Poll for PII results with improved error handling and retry logic
   const pollPiiResults = async (fileId) => {
-    const maxAttempts = 60; // 60 attempts * 2 seconds = 2 minutes max
+    const maxAttempts = 60;
     let attempts = 0;
 
     const poll = async () => {
@@ -83,11 +97,10 @@ function App() {
           setPiiStatus('completed');
           return;
         } else if (response.status === 404) {
-          // PII results not ready yet
           attempts++;
           if (attempts < maxAttempts) {
             console.log(`PII results not ready, will retry in 2 seconds (${attempts}/${maxAttempts})`);
-            setTimeout(poll, 2000); // Poll every 2 seconds
+            setTimeout(poll, 2000);
           } else {
             console.log('PII detection timeout after maximum attempts');
             setPiiStatus('timeout');
@@ -109,11 +122,61 @@ function App() {
       }
     };
 
-    // Start polling immediately
     poll();
   };
 
-  // Decryption function
+  const fetchAuditLogs = async (filters = auditFilters) => {
+    setAuditLoading(true);
+    setAuditError(null);
+    try {
+      const params = new URLSearchParams({
+        file_id: filters.file_id,
+        activity_type: filters.activity_type,
+        limit: filters.limit,
+        offset: filters.offset
+      });
+      const response = await fetch(`http://localhost:5000/audit/logs?${params}`);
+      if (!response.ok) throw new Error('Failed to fetch audit logs');
+      const data = await response.json();
+      setAuditLogs(data.logs || []);
+    } catch (err) {
+      setAuditError(err.message || 'Failed to load audit logs');
+    } finally {
+      setAuditLoading(false);
+    }
+  };
+
+  // Handle filter changes
+  const handleAuditFilterChange = (field, value) => {
+    const newFilters = { ...auditFilters, [field]: value, offset: 0 };
+    setAuditFilters(newFilters);
+    fetchAuditLogs(newFilters);
+  };
+
+  // Handle pagination
+  const handleAuditPagination = (newOffset) => {
+    const newFilters = { ...auditFilters, offset: newOffset };
+    setAuditFilters(newFilters);
+    fetchAuditLogs(newFilters);
+  };
+
+  // Open modal and fetch logs for current file
+  const openAuditModal = () => {
+    setShowAuditModal(true);
+    setAuditFilters({
+      file_id: decryptFileId || '',
+      activity_type: '',
+      limit: 1000,
+      offset: 0
+    });
+    fetchAuditLogs({
+      file_id: decryptFileId || '',
+      activity_type: '',
+      limit: 1000,
+      offset: 0
+    });
+  };
+
   const handleDecrypt = async () => {
     if (!decryptFileId || !decryptKey) {
       alert('Please enter both File ID and Decryption Key');
@@ -122,6 +185,7 @@ function App() {
 
     setDecryptLoading(true);
     setDecryptResult(null);
+    setShowAuditSummaryTable(false);
 
     try {
       const response = await fetch('http://localhost:5000/decrypt_pii', {
@@ -140,11 +204,10 @@ function App() {
 
       const result = await response.json();
       setDecryptResult(result);
-      
+
       // Download the decrypted text
       const blob = new Blob([result.decrypted_text], { type: 'text/plain' });
       const url = window.URL.createObjectURL(blob);
-      
       const link = document.createElement('a');
       link.href = url;
       link.download = `${decryptFileId}_decrypted.txt`;
@@ -152,10 +215,18 @@ function App() {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
-      
+
+      // Fetch audit logs after successful decryption
+      fetchAuditLogs(decryptFileId);
+
+      // Show the audit button after decryption attempt
+      setShowAuditButton(true);
+
     } catch (err) {
       console.error('Decryption error:', err);
       alert(`Decryption failed: ${err.message}`);
+      // Still show the audit button even if decryption fails
+      setShowAuditButton(true);
     } finally {
       setDecryptLoading(false);
     }
@@ -204,7 +275,6 @@ function App() {
           piiDetectionStatus: data.pii_detection_status
         });
 
-        // Handle PII detection based on server response
         if (data.pii_detection_status === 'started') {
           console.log('PII detection started, beginning polling...');
           setPiiStatus('processing');
@@ -255,21 +325,21 @@ function App() {
         return;
       }
       
-      // if (fileType === 'text/csv' || file.name.toLowerCase().endsWith('.csv')) {
-      //   const text = await file.text();
-      //   const lines = text.split('\n').slice(0, 20);
-      //   setFileContent({ type: 'csv', content: lines.join('\n'), fullContent: text });
-      //   return;
-      // }
+      if (fileType === 'text/csv' || file.name.toLowerCase().endsWith('.csv')) {
+        const text = await file.text();
+        const lines = text.split('\n').slice(0, 20);
+        setFileContent({ type: 'csv', content: lines.join('\n'), fullContent: text });
+        return;
+      }
       
-      // if (fileType.includes('sheet') || fileType.includes('excel') || 
-      //     file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls')) {
-      //   setFileContent({ 
-      //     type: 'excel', 
-      //     content: `Excel file: ${file.name}\nSize: ${(file.size / 1024).toFixed(2)} KB\n\nThis Excel file will be processed by the server to extract its content.` 
-      //   });
-      //   return;
-      // }
+      if (fileType.includes('sheet') || fileType.includes('excel') || 
+          file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls')) {
+        setFileContent({ 
+          type: 'excel', 
+          content: `Excel file: ${file.name}\nSize: ${(file.size / 1024).toFixed(2)} KB\n\nThis Excel file will be processed by the server to extract its content.` 
+        });
+        return;
+      }
       
       if (fileType === 'application/pdf') {
         setFileContent({ 
@@ -337,9 +407,9 @@ function App() {
           </div>
         );
       
-      // case 'csv':
+      case 'csv':
       case 'text':
-      //case 'excel':
+      case 'excel':
       case 'pdf':
       case 'binary':
       case 'error':
@@ -416,7 +486,7 @@ function App() {
           <button 
             onClick={() => {
               setShowPiiResults(false);
-              setShowPiiEditor(true); // Show the detailed PII editor
+              setShowPiiEditor(true);
             }}
             className="review-pii-btn"
           >
@@ -509,6 +579,7 @@ function App() {
       </div>
     );
   };
+  
   if (showPiiEditor && piiResults && result) {
     return (
       <PIIDetectionPage
@@ -562,7 +633,6 @@ function App() {
           </div>
         </div>
 
-        {/* Process Flow Section */}
         <div className="process-flow">
           <h2>Processing Steps</h2>
           <div className="process-steps">
@@ -576,21 +646,10 @@ function App() {
             <div className={`process-step ${piiStatus === 'completed' ? 'completed' : piiStatus === 'processing' ? 'processing' : piiStatus === 'error' || piiStatus === 'timeout' ? 'error' : ''}`}>
               {renderPiiStatus()}
             </div>
-            
-            {/* {piiStatus === 'completed' && (
-              <>
-                <span className="process-arrow">→</span>
-                <div className="process-step completed">
-                  <span className="step-icon">✅</span>
-                  <span className="step-text">Ready for Review</span>
-                </div>
-              </>
-            )} */}
           </div>
         </div>
 
         <div className="results-content">
-          {/* Original Document */}
           <div className="document-panel">
             <div className="panel-header">
               <span className="panel-icon">📄</span>
@@ -601,7 +660,6 @@ function App() {
             </div>
           </div>
 
-          {/* Extracted Text */}
           <div className="document-panel">
             <div className="panel-header">
               {result.success ? (
@@ -628,11 +686,65 @@ function App() {
           </div>
         </div>
 
-        {/* PII Results Modal */}
         {renderPiiModal()}
       </div>
     );
   }
+
+  const renderAuditSummary = () => {
+    if (!showAuditSummaryTable) {
+      return (
+        <button
+          className="audit-summary-btn"
+          style={{ marginTop: '1rem' }}
+          onClick={() => setShowAuditSummaryTable(true)}
+          disabled={auditLoading || auditLogs.length === 0}
+        >
+          📋 View Audit Summary
+        </button>
+      );
+    }
+    if (auditLoading) return <div>Loading audit summary...</div>;
+    if (auditError) return <div style={{ color: 'red' }}>Error: {auditError}</div>;
+    if (!auditLogs.length) return <div>No audit logs found for this file.</div>;
+
+    return (
+      <div className="audit-summary">
+        <h3>📋 Audit Summary for File</h3>
+        <button
+          className="audit-summary-btn"
+          style={{ float: 'right', marginBottom: '0.5rem' }}
+          onClick={() => setShowAuditSummaryTable(false)}
+        >
+          Close
+        </button>
+        <table className="audit-table">
+          <thead>
+            <tr>
+              <th>Activity</th>
+              <th>Status</th>
+              <th>Timestamp</th>
+              <th>Details</th>
+            </tr>
+          </thead>
+          <tbody>
+            {auditLogs.map((log, idx) => (
+              <tr key={idx}>
+                <td>{log.activity_type}</td>
+                <td>{log.status || '-'}</td>
+                <td>{log.timestamp ? new Date(log.timestamp).toLocaleString() : '-'}</td>
+                <td>
+                  {log.details && typeof log.details === 'object'
+                    ? <pre style={{ maxWidth: 200, whiteSpace: 'pre-wrap' }}>{JSON.stringify(log.details, null, 1)}</pre>
+                    : (log.details || '-')}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
 
   // Main navigation component
   const renderMainMenu = () => {
@@ -679,7 +791,131 @@ function App() {
     );
   };
 
+  const renderAuditModal = () => {
+    if (!showAuditModal) return null;
+    return (
+      <div className="audit-modal-overlay" onClick={() => setShowAuditModal(false)}>
+        <div className="audit-modal" onClick={e => e.stopPropagation()}>
+          <div className="audit-modal-header">
+            <h3>📋 Audit Log</h3>
+            <button className="audit-modal-close" onClick={() => setShowAuditModal(false)}>×</button>
+          </div>
+          {/* Filters */}
+          <div className="audit-filters">
+            <div className="audit-filter-row">
+              <div className="audit-filter-group">
+                <label>File ID:</label>
+                <input
+                  type="text"
+                  value={auditFilters.file_id}
+                  onChange={e => handleAuditFilterChange('file_id', e.target.value)}
+                  placeholder="Filter by file ID"
+                  className="audit-filter-input"
+                />
+              </div>
+              <div className="audit-filter-group">
+                <label>Activity Type:</label>
+                <select
+                  value={auditFilters.activity_type}
+                  onChange={e => handleAuditFilterChange('activity_type', e.target.value)}
+                  className="audit-filter-select"
+                >
+                  <option value="">All Activities</option>
+                </select>
+              </div>
+              <div className="audit-filter-group">
+                <label>Limit:</label>
+                <select
+                  value={auditFilters.limit}
+                  onChange={e => handleAuditFilterChange('limit', parseInt(e.target.value))}
+                  className="audit-filter-select"
+                >
+                  <option value={500}>500</option>
+                  <option value={1000}>1000</option>
+                  <option value={5000}>5000</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <div className="audit-modal-content">
+            {auditLoading ? (
+              <div className="audit-loading">
+                <div className="loading-spinner"></div>
+                <p>Loading audit logs...</p>
+              </div>
+            ) : auditError ? (
+              <div className="audit-error">
+                <p>❌ {auditError}</p>
+                <button onClick={() => fetchAuditLogs()} className="retry-btn">
+                  🔄 Retry
+                </button>
+              </div>
+            ) : auditLogs.length === 0 ? (
+              <div className="audit-empty">
+                <p>📭 No audit logs found</p>
+              </div>
+            ) : (
+              <>
+                <div className="audit-logs-container" style={{ maxHeight: 400, overflowY: 'auto' }}>
+                  {auditLogs.map((log, index) => (
+                    <div key={index} className="audit-log-item" style={{
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '8px',
+                      marginBottom: '1rem',
+                      padding: '1rem',
+                      background: '#fff'
+                    }}>
+                      <div className="audit-log-header" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <div>
+                          <strong style={{ color: '#2563eb' }}>{log.activity_type.replace('_', ' ').toUpperCase()}</strong>
+                        </div>
+                        <div style={{ color: '#6b7280', fontSize: '0.9em' }}>
+                          {log.timestamp ? new Date(log.timestamp).toLocaleString() : '-'}
+                        </div>
+                      </div>
+                      <div className="audit-log-details" style={{ marginTop: '0.5rem' }}>
+                        <div><strong>File ID:</strong> {log.file_id}</div>
+                        {log.details && (
+                          <div>
+                            <strong>Details:</strong>
+                            <pre style={{ background: '#f3f4f6', borderRadius: 4, padding: 8, margin: 0 }}>
+                              {typeof log.details === 'object'
+                                ? JSON.stringify(log.details, null, 2)
+                                : log.details}
+                            </pre>
+                          </div>
+                        )}
+                        {log.metadata && (
+                          <div>
+                            <strong>Metadata:</strong>
+                            <pre style={{ background: '#f3f4f6', borderRadius: 4, padding: 8, margin: 0 }}>
+                              {typeof log.metadata === 'object'
+                                ? JSON.stringify(log.metadata, null, 2)
+                                : log.metadata}
+                            </pre>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {/* Pagination */}
+                <div className="audit-pagination" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                    <span className="audit-page-info">
+                      Showing {auditLogs.length === 0 ? 0 : auditFilters.offset + 1} - {auditFilters.offset + auditLogs.length}
+                    </span>
+                
+                  </div>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // Decryption interface component
+  // Only show "View Audit Log" button after decryption attempt
   const renderDecryptInterface = () => {
     return (
       <div className="decrypt-interface">
@@ -691,57 +927,88 @@ function App() {
           <p>Enter your File ID and decryption key to restore the original text</p>
         </div>
         
-        <div className="decrypt-form">
+        <div className="decrypt-form-fields">
           <div className="form-group">
-            <label htmlFor="fileId">File ID:</label>
+            <label htmlFor="decrypt-file-id">File ID</label>
             <input
+              id="decrypt-file-id"
               type="text"
-              id="fileId"
               value={decryptFileId}
-              onChange={(e) => setDecryptFileId(e.target.value)}
-              placeholder="Enter the File ID (e.g., 32-6171-48b0-8f5a-7960e6b69a8)"
-              className="form-input"
+              onChange={e => setDecryptFileId(e.target.value)}
+              placeholder="Enter the File ID (e.g., 32-617f-48b0-8f5a-7960e6b69a8)"
+              className="decrypt-input"
+              autoComplete="off"
             />
           </div>
           
           <div className="form-group">
-            <label htmlFor="decryptKey">Decryption Key:</label>
+            <label htmlFor="decrypt-key">Decryption Key</label>
             <input
-              type="text"
-              id="decryptKey"
+              id="decrypt-key"
+              type="password"
               value={decryptKey}
-              onChange={(e) => setDecryptKey(e.target.value)}
+              onChange={e => setDecryptKey(e.target.value)}
               placeholder="Enter your decryption key"
-              className="form-input"
+              className="decrypt-input"
+              autoComplete="off"
             />
           </div>
           
-          <button 
-            className="decrypt-button"
+          <button
+            className="decrypt-btn"
             onClick={handleDecrypt}
             disabled={decryptLoading || !decryptFileId || !decryptKey}
           >
-            {decryptLoading ? '🔍 Decrypting...' : '🔓 Decrypt Text'}
+            {decryptLoading ? (
+              <>
+                <div className="loading-spinner" style={{ width: '16px', height: '16px' }}></div>
+                Decrypting...
+              </>
+            ) : (
+              <>
+                🔓 Decrypt Text
+              </>
+            )}
           </button>
         </div>
-        
-        {decryptResult && (
-          <div className="decrypt-result">
-            <h3>✅ Decryption Successful!</h3>
-            <div className="result-details">
-              <p><strong>File ID:</strong> {decryptResult.file_id}</p>
-              <p><strong>Text Length:</strong> {decryptResult.text_length} characters</p>
-              <p><strong>Status:</strong> Decrypted text has been downloaded as "{decryptResult.file_id}_decrypted.txt"</p>
-            </div>
-            <div className="decrypted-preview">
-              <h4>Preview (first 200 characters):</h4>
-              <div className="preview-text">
-                {decryptResult.decrypted_text.substring(0, 200)}
-                {decryptResult.decrypted_text.length > 200 && '...'}
-              </div>
-            </div>
+
+        {/* Secondary Actions - Only show after decryption attempt */}
+        {showAuditButton && (
+          <div className="decrypt-secondary-actions">
+            <button
+              className="audit-summary-btn"
+              onClick={openAuditModal}
+              disabled={auditLoading}
+            >
+              📋 View Audit Log
+            </button>
           </div>
         )}
+
+        {/* Decrypt Result - if exists */}
+        {decryptResult && (
+          <div className="decrypt-result">
+            <h3>✅ Decryption Successful</h3>
+            <div className="result-details">
+              <p><strong>File ID:</strong> {decryptResult.file_id}</p>
+              <p><strong>Characters:</strong> {decryptResult.character_count?.toLocaleString()}</p>
+              <p><strong>File Downloaded:</strong> {decryptResult.file_id}_decrypted.txt</p>
+            </div>
+            
+            {decryptResult.decrypted_text && (
+              <div className="decrypted-preview">
+                <h4>Preview (first 500 characters):</h4>
+                <div className="preview-text">
+                  {decryptResult.decrypted_text.substring(0, 500)}
+                  {decryptResult.decrypted_text.length > 500 && '...'}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Audit Modal */}
+        {renderAuditModal()}
       </div>
     );
   };
@@ -841,14 +1108,14 @@ function App() {
               <span className="format-icon">📄</span>
               <span>PDF (text-based and scanned)</span>
             </div>
-            {/* <div className="format-item">
+            <div className="format-item">
               <span className="format-icon">📊</span>
               <span>Excel (XLS, XLSX)</span>
-            </div> */}
-            {/* <div className="format-item">
+            </div>
+            <div className="format-item">
               <span className="format-icon">📊</span>
               <span>CSV</span>
-            </div> */}
+            </div>
             <div className="format-item">
               <span className="format-icon">📄</span>
               <span>Text files (TXT)</span>

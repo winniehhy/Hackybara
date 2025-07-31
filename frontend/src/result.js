@@ -16,6 +16,19 @@ function PIIDetectionPage({ fileId, piiData: initialPiiData, extractedText, onBa
 	const [showKeyModal, setShowKeyModal] = useState(false);
 	const [decryptionKey, setDecryptionKey] = useState('');
 
+  // audit log state
+
+  const [showAuditModal, setShowAuditModal] = useState(false);
+const [auditLogs, setAuditLogs] = useState([]);
+const [auditLoading, setAuditLoading] = useState(false);
+const [auditError, setAuditError] = useState(null);
+const [auditFilters, setAuditFilters] = useState({
+  file_id: '',
+  activity_type: '',
+  limit: 50,
+  offset: 0
+});
+
   // Fetch PII data from backend if not provided
   useEffect(() => {
     const fetchPiiData = async () => {
@@ -672,6 +685,99 @@ function PIIDetectionPage({ fileId, piiData: initialPiiData, extractedText, onBa
 		}
 	};
 
+  // Fetch Audit Logs  ---- new add
+const fetchAuditLogs = async (filters = auditFilters) => {
+  setAuditLoading(true);
+  setAuditError(null);
+  
+  try {
+    const params = new URLSearchParams();
+    if (filters.file_id) params.append('file_id', filters.file_id);
+    if (filters.activity_type) params.append('activity_type', filters.activity_type);
+    params.append('limit', filters.limit.toString());
+    params.append('offset', filters.offset.toString());
+
+    const apiUrl = process.env.NODE_ENV === 'production' 
+      ? `/api/audit/logs?${params.toString()}` 
+      : `http://127.0.0.1:5000/audit/logs?${params.toString()}`;
+
+    const response = await fetch(apiUrl);
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch audit logs: ${response.status}`);
+    }
+
+    const data = await response.json();
+    setAuditLogs(data.logs || []);
+  } catch (err) {
+    console.error('Error fetching audit logs:', err);
+    setAuditError(err.message || 'Failed to load audit logs');
+  } finally {
+    setAuditLoading(false);
+  }
+};
+
+// Open audit log modal
+const openAuditModal = () => {
+  setShowAuditModal(true);
+  setAuditFilters(prev => ({ ...prev, file_id: fileId })); // Set current file ID as default filter
+  fetchAuditLogs({ ...auditFilters, file_id: fileId });
+};
+
+// Handle filter changes
+const handleAuditFilterChange = (key, value) => {
+  const newFilters = { ...auditFilters, [key]: value, offset: 0 }; // Reset offset when changing filters
+  setAuditFilters(newFilters);
+  fetchAuditLogs(newFilters);
+};
+
+// Handle pagination
+const handleAuditPagination = (newOffset) => {
+  const newFilters = { ...auditFilters, offset: newOffset };
+  setAuditFilters(newFilters);
+  fetchAuditLogs(newFilters);
+};
+
+// Format timestamp
+const formatTimestamp = (timestamp) => {
+  return new Date(timestamp).toLocaleString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
+};
+
+// Get activity type color
+const getActivityTypeColor = (activityType) => {
+  const colors = {
+    'file_upload': '#10b981', // Green
+    'pii_detection': '#3b82f6', // Blue
+    'pii_modification': '#f59e0b', // Yellow
+    'encryption': '#ef4444', // Red
+    'decryption': '#8b5cf6', // Purple
+    'export': '#06b6d4', // Cyan
+    'error': '#f87171' // Light red
+  };
+  return colors[activityType] || '#6b7280'; // Gray default
+};
+
+// Get activity type icon
+const getActivityTypeIcon = (activityType) => {
+  const icons = {
+    'file_upload': '📤',
+    'pii_detection': '🔍',
+    'pii_modification': '✏️',
+    'encryption': '🔐',
+    'decryption': '🔓',
+    'export': '📥',
+    'error': '❌'
+  };
+  return icons[activityType] || '📋';
+};
+
   // Loading state
   if (loading) {
     return (
@@ -994,6 +1100,10 @@ function PIIDetectionPage({ fileId, piiData: initialPiiData, extractedText, onBa
 										{/* <button className="action-button outline" onClick={decryptText}>
 											🔓 Decrypt Text
 										</button> */}
+
+                    <button className="action-button outline" onClick={openAuditModal}>
+                        📋 View Audit Log
+                    </button>
 									</div>
 								</div>
 							</div>
@@ -1011,7 +1121,7 @@ function PIIDetectionPage({ fileId, piiData: initialPiiData, extractedText, onBa
 									className="key-modal-close" 
 									onClick={() => setShowKeyModal(false)}
 								>
-									×
+									
 								</button>
 							</div>
 							
@@ -1055,6 +1165,181 @@ function PIIDetectionPage({ fileId, piiData: initialPiiData, extractedText, onBa
 						</div>
 					</div>
 				)}
+
+        {/* Audit Log Modal */}
+{showAuditModal && (
+  <div className="audit-modal-overlay" onClick={() => setShowAuditModal(false)}>
+    <div className="audit-modal" onClick={(e) => e.stopPropagation()}>
+      <div className="audit-modal-header">
+        <h3>📋 Audit Log</h3>
+        <button 
+          className="audit-modal-close" 
+          onClick={() => setShowAuditModal(false)}
+        >
+          ×
+        </button>
+      </div>
+      
+      {/* Filters */}
+      <div className="audit-filters">
+        <div className="audit-filter-row">
+          <div className="audit-filter-group">
+            <label>File ID:</label>
+            <input
+              type="text"
+              value={auditFilters.file_id}
+              onChange={(e) => handleAuditFilterChange('file_id', e.target.value)}
+              placeholder="Filter by file ID"
+              className="audit-filter-input"
+            />
+          </div>
+          
+          <div className="audit-filter-group">
+            <label>Activity Type:</label>
+            <select
+              value={auditFilters.activity_type}
+              onChange={(e) => handleAuditFilterChange('activity_type', e.target.value)}
+              className="audit-filter-select"
+            >
+              <option value="">All Activities</option>
+              {/* <option value="file_upload">File Upload</option>
+              <option value="pii_detection">PII Detection</option>
+              <option value="pii_modification">PII Modification</option>
+              <option value="encryption">Encryption</option>
+              <option value="decryption">Decryption</option>
+              <option value="export">Export</option>
+              <option value="error">Error</option> */}
+            </select>
+          </div>
+          
+          <div className="audit-filter-group">
+            <label>Limit:</label>
+            <select
+              value={auditFilters.limit}
+              onChange={(e) => handleAuditFilterChange('limit', parseInt(e.target.value))}
+              className="audit-filter-select"
+            >
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      
+            <div className="audit-modal-content">
+              {auditLoading ? (
+                <div className="audit-loading">
+                  <div className="loading-spinner"></div>
+                  <p>Loading audit logs...</p>
+                </div>
+              ) : auditError ? (
+                <div className="audit-error">
+                  <p>❌ {auditError}</p>
+                  <button onClick={() => fetchAuditLogs()} className="retry-btn">
+                    🔄 Retry
+                  </button>
+                </div>
+              ) : auditLogs.length === 0 ? (
+                <div className="audit-empty">
+                  <p>📭 No audit logs found</p>
+                </div>
+              ) : (
+                <>
+                  <div className="audit-logs-container">
+                    {auditLogs.map((log, index) => (
+                      <div key={index} className="audit-log-item">
+                        <div className="audit-log-header">
+                          <div className="audit-log-type">
+                            <span 
+                              className="audit-type-icon"
+                              style={{ color: getActivityTypeColor(log.activity_type) }}
+                            >
+                              {getActivityTypeIcon(log.activity_type)}
+                            </span>
+                            <span 
+                              className="audit-type-text"
+                              style={{ color: getActivityTypeColor(log.activity_type) }}
+                            >
+                              {log.activity_type.replace('_', ' ').toUpperCase()}
+                            </span>
+                          </div>
+                          <div className="audit-log-timestamp">
+                            {formatTimestamp(log.timestamp)}
+                          </div>
+                        </div>
+                        
+                        <div className="audit-log-details">
+                          <div className="audit-log-row">
+                            <strong>File ID:</strong> 
+                            <span className="audit-file-id">{log.file_id}</span>
+                          </div>
+                          
+                          {log.user_id && (
+                            <div className="audit-log-row">
+                              <strong>User ID:</strong> {log.user_id}
+                            </div>
+                          )}
+                          
+                          {log.details && (
+                            <div className="audit-log-row">
+                              <strong>Details:</strong>
+                              <div className="audit-details-json">
+                                {typeof log.details === 'object' ? (
+                                  <pre>{JSON.stringify(log.details, null, 2)}</pre>
+                                ) : (
+                                  <span>{log.details}</span>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                          
+                          {log.metadata && (
+                            <div className="audit-log-row">
+                              <strong>Metadata:</strong>
+                              <div className="audit-metadata-json">
+                                {typeof log.metadata === 'object' ? (
+                                  <pre>{JSON.stringify(log.metadata, null, 2)}</pre>
+                                ) : (
+                                  <span>{log.metadata}</span>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  
+                  {/* Pagination */}
+                  <div className="audit-pagination">
+                    <button
+                      className="audit-page-btn"
+                      onClick={() => handleAuditPagination(Math.max(0, auditFilters.offset - auditFilters.limit))}
+                      disabled={auditFilters.offset === 0}
+                    >
+                      ← Previous
+                    </button>
+                    
+                    <span className="audit-page-info">
+                      Showing {auditFilters.offset + 1} - {auditFilters.offset + auditLogs.length}
+                    </span>
+                    
+                    <button
+                      className="audit-page-btn"
+                      onClick={() => handleAuditPagination(auditFilters.offset + auditFilters.limit)}
+                      disabled={auditLogs.length < auditFilters.limit}
+                    >
+                      Next →
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
 			</>
 		);
 	}
