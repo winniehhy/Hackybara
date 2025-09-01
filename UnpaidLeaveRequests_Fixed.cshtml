@@ -1,0 +1,481 @@
+@model List<FinserveNew.Models.UnpaidLeaveRequestModel>
+
+@{
+    ViewData["Title"] = "Unpaid Leave Requests";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <!-- Page Header -->
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2 class="page-title mb-0">Unpaid Leave Requests</h2>
+                <div class="btn-group" role="group">
+                    <a href="/Leaves/Create" class="btn btn-primary">
+                        <i class="fas fa-plus me-2"></i>
+                        Apply for Leave
+                    </a>
+                    <a asp-action="LeaveRecords" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left me-2"></i>
+                        Back to Leave Records
+                    </a>
+                </div>
+            </div>
+
+            <!-- Alert Messages -->
+            @if (TempData["Success"] != null)
+            {
+                <div class="alert alert-success alert-dismissible fade show" role="alert">
+                    @TempData["Success"]
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            }
+
+            @if (TempData["Error"] != null)
+            {
+                <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    @TempData["Error"]
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            }
+
+            <!-- Info Card -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    <div class="row align-items-center">
+                        <div class="col-md-1 text-center">
+                            <i class="fas fa-info-circle text-info fa-2x"></i>
+                        </div>
+                        <div class="col-md-11">
+                            <h6 class="card-title text-info mb-2">About Unpaid Leave Requests</h6>
+                            <p class="card-text small mb-0">
+                                When your leave request exceeds your available balance, it will be submitted as an unpaid leave request requiring HR approval. 
+                                <strong>Excess days beyond your balance will be unpaid.</strong>
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Filter Section -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <label for="statusFilter" class="form-label">Filter by Status:</label>
+                            <select id="statusFilter" class="form-select">
+                                <option value="">All Status</option>
+                                <option value="pending">Pending</option>
+                                <option value="approved">Approved</option>
+                                <option value="rejected">Rejected</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="yearFilter" class="form-label">Filter by Year:</label>
+                            <select id="yearFilter" class="form-select">
+                                <option value="">All Years</option>
+                                @{
+                                    var currentYear = DateTime.Now.Year;
+                                    for (int year = currentYear; year >= currentYear - 5; year--)
+                                    {
+                                        <option value="@year">@year</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row mt-3">
+                        <div class="col-12">
+                            <button id="clearFilters" class="btn btn-outline-secondary btn-sm">
+                                <i class="fas fa-times me-1"></i>Clear Filters
+                            </button>
+                            <small class="text-muted ms-3">
+                                <span id="recordCount">@Model.Count</span> record(s) found
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Unpaid Leave Requests Table -->
+            <div class="form-container">
+                @if (Model != null && Model.Any())
+                {
+                    <div class="table-responsive">
+                        <table class="table table-hover" id="unpaidLeaveTable">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Request ID</th>
+                                    <th>Leave Type</th>
+                                    <th>Start Date</th>
+                                    <th>End Date</th>
+                                    <th>Duration</th>
+                                    <th>Excess Days</th>
+                                    <th>Reason</th>
+                                    <th>Status</th>
+                                    <th>Applied Date</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var request in Model)
+                                {
+                                    <tr data-status="@request.Status.ToLower()" data-year="@request.StartDate.Year">
+                                        <!-- Request ID -->
+                                        <td>#LVE-@request.UnpaidLeaveRequestID</td>
+
+                                        <!-- Leave Type -->
+                                        <td>
+                                            <span class="badge bg-info">@request.LeaveType?.TypeName</span>
+                                        </td>
+
+                                        <!-- Start Date -->
+                                        <td>@request.StartDate.ToString("dd MMM yyyy")</td>
+
+                                        <!-- End Date -->
+                                        <td>@request.EndDate.ToString("dd MMM yyyy")</td>
+
+                                        <!-- Duration -->
+                                        <td>@request.RequestedDays.ToString("0.#") day@(request.RequestedDays != 1 ? "s" : "")</td>
+
+                                        <!-- Excess Days -->
+                                        <td>
+                                            <span class="badge bg-warning text-dark">
+                                                @request.ExcessDays.ToString("0.#") unpaid
+                                            </span>
+                                        </td>
+
+                                        <!-- Reason (Truncated) -->
+                                        <td>
+                                            <span class="text-truncate d-inline-block" style="max-width: 200px;" title="@request.Reason">
+                                                @(request.Reason?.Length > 50 ? request.Reason.Substring(0, 50) + "..." : request.Reason ?? "No reason provided")
+                                            </span>
+                                        </td>
+
+                                        <!-- Status -->
+                                        <td>
+                                            @switch (request.Status.ToLower())
+                                            {
+                                                case "pending":
+                                                    <span class="badge bg-warning">Pending</span>
+                                                    break;
+                                                case "approved":
+                                                    <span class="badge bg-success">Approved</span>
+                                                    break;
+                                                case "rejected":
+                                                    <span class="badge bg-danger">Rejected</span>
+                                                    break;
+                                                default:
+                                                    <span class="badge bg-secondary">@request.Status</span>
+                                                    break;
+                                            }
+                                        </td>
+
+                                        <!-- Submission Date -->
+                                        <td>
+                                            @if (request.SubmissionDate != DateTime.MinValue)
+                                            {
+                                                @request.SubmissionDate.ToString("dd MMM yyyy")
+                                            }
+                                            else
+                                            {
+                                                <text>N/A</text>
+                                            }
+                                        </td>
+
+                                        <!-- Actions -->
+                                        <td>
+                                            <button class="btn btn-sm btn-outline-primary" onclick="toggleDetails(@request.UnpaidLeaveRequestID)" title="View Details">
+                                                <i class="fas fa-eye"></i>
+                                            </button>
+                                            @if (request.Status.ToLower() == "pending")
+                                            {
+                                                <a asp-action="Edit" asp-route-id="@request.UnpaidLeaveRequestID" class="btn btn-sm btn-outline-success" title="Edit">
+                                                    <i class="fas fa-edit"></i>
+                                                </a>
+                                                <a asp-action="Delete" asp-route-id="@request.UnpaidLeaveRequestID" class="btn btn-sm btn-outline-danger" title="Cancel">
+                                                    <i class="fas fa-times"></i>
+                                                </a>
+                                            }
+                                        </td>
+                                    </tr>
+
+                                    <!-- Expandable Row for Full Details -->
+                                    <tr class="collapse" id="details-@request.UnpaidLeaveRequestID">
+                                        <td colspan="10" class="bg-light">
+                                            <div class="p-3">
+                                                @{
+                                                    // Calculate breakdown variables at the top
+                                                    var startDate = request.StartDate;
+                                                    var endDate = request.EndDate;
+                                                    var totalRequestedDays = (int)request.RequestedDays;
+                                                    var excessDays = (int)request.ExcessDays;
+                                                    var paidDays = totalRequestedDays - excessDays; // Calculate actual paid days from balance
+                                                    
+                                                    // Fixed calculation for proper date breakdown
+                                                    DateTime? paidLeaveEndDate = null;
+                                                    DateTime? unpaidLeaveStartDate = null;
+                                                    
+                                                    if (paidDays > 0)
+                                                    {
+                                                        // Paid leave period: starts from startDate and covers paidDays
+                                                        // For example: Start 9 Sept, 16 paid days = 9 Sept to 24 Sept (16 days total)
+                                                        paidLeaveEndDate = startDate.AddDays(paidDays - 1);
+                                                    }
+                                                    
+                                                    if (excessDays > 0)
+                                                    {
+                                                        // Unpaid leave starts after paid leave ends (or from start if no paid days)
+                                                        unpaidLeaveStartDate = paidDays > 0 ? paidLeaveEndDate.Value.AddDays(1) : startDate;
+                                                    }
+                                                }
+                                                <div class="row">
+                                                    <!-- Full Reason -->
+                                                    <div class="col-md-6">
+                                                        <h6 class="text-primary">
+                                                            <i class="fas fa-comment-alt me-1"></i>
+                                                            Leave Reason
+                                                        </h6>
+                                                        <p class="mb-3">@(string.IsNullOrEmpty(request.Reason) ? "No reason provided" : request.Reason)</p>
+
+                                                        @if (!string.IsNullOrEmpty(request.JustificationReason))
+                                                        {
+                                                            <h6 class="text-warning">
+                                                                <i class="fas fa-exclamation-circle me-1"></i>
+                                                                Justification for Excess Days
+                                                            </h6>
+                                                            <p class="mb-3">@request.JustificationReason</p>
+                                                        }
+                                                    </div>
+
+                                                    <!-- Status Details -->
+                                                    <div class="col-md-6">
+                                                        <h6 class="text-primary">
+                                                            <i class="fas fa-info-circle me-1"></i>
+                                                            Request Details
+                                                        </h6>
+                                                        <ul class="list-unstyled">
+                                                            <li><strong>Paid Days:</strong> @paidDays.ToString("0.#")</li>
+                                                            <li><strong>Excess (Unpaid) Days:</strong> <span class="text-warning">@request.ExcessDays.ToString("0.#")</span></li>
+                                                            <li><strong>Total Days Requested:</strong> @request.RequestedDays.ToString("0.#")</li>
+                                                            <li><strong>Status:</strong> @request.Status</li>
+                                                            @if (request.ApprovalDate.HasValue)
+                                                            {
+                                                                <li><strong>Processed Date:</strong> @request.ApprovalDate.Value.ToString("dd MMM yyyy HH:mm")</li>
+                                                            }
+                                                            @if (!string.IsNullOrEmpty(request.ApprovalRemarks))
+                                                            {
+                                                                <li><strong>HR Remarks:</strong> @request.ApprovalRemarks</li>
+                                                            }
+                                                        </ul>
+                                                    </div>
+                                                </div>
+
+                                                <hr />
+                                                <div class="row">
+                                                    <div class="col-12">
+                                                        <h6 class="text-primary">
+                                                            <i class="fas fa-calendar-check me-1"></i>
+                                                            Leave Days Breakdown
+                                                        </h6>
+                                                        <div class="row">
+                                                            @if (paidDays > 0)
+                                                            {
+                                                                <div class="col-md-6">
+                                                                    <div class="card border-success">
+                                                                        <div class="card-body text-center">
+                                                                            <h6 class="card-title text-success">
+                                                                                <i class="fas fa-check-circle me-2"></i>@request.LeaveType?.TypeName (Paid)
+                                                                            </h6>
+                                                                            <p class="card-text">
+                                                                                <strong>@startDate.ToString("dd MMM") - @paidLeaveEndDate.Value.ToString("dd MMM yyyy")</strong><br>
+                                                                                <span class="badge bg-success">@paidDays day@(paidDays != 1 ? "s" : "")</span>
+                                                                            </p>
+                                                                            <small class="text-muted">Covered by your leave balance</small>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            }
+                                                            
+                                                            @if (excessDays > 0)
+                                                            {
+                                                                <div class="col-md-6">
+                                                                    <div class="card border-warning">
+                                                                        <div class="card-body text-center">
+                                                                            <h6 class="card-title text-warning">
+                                                                                <i class="fas fa-money-bill-alt me-2"></i>Unpaid Leave
+                                                                            </h6>
+                                                                            <p class="card-text">
+                                                                                <strong>@unpaidLeaveStartDate.Value.ToString("dd MMM") - @endDate.ToString("dd MMM yyyy")</strong><br>
+                                                                                <span class="badge bg-warning text-dark">@excessDays day@(excessDays != 1 ? "s" : "")</span>
+                                                                            </p>
+                                                                            <small class="text-muted">Exceeds available balance</small>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            }
+                                                        </div>
+                                                        
+                                                        <!-- Visual Timeline for Better Understanding -->
+                                                        <div class="mt-3">
+                                                            <h6 class="text-secondary">
+                                                                <i class="fas fa-timeline me-1"></i>
+                                                                Leave Timeline
+                                                            </h6>
+                                                            <div class="d-flex align-items-center">
+                                                                @if (paidDays > 0)
+                                                                {
+                                                                    <div class="flex-fill">
+                                                                        <div class="progress" style="height: 25px;">
+                                                                            <div class="progress-bar bg-success" role="progressbar" 
+                                                                                 style="width: @((double)paidDays / totalRequestedDays * 100)%">
+                                                                                @paidDays Paid
+                                                                            </div>
+                                                                            @if (excessDays > 0)
+                                                                            {
+                                                                                <div class="progress-bar bg-warning" role="progressbar" 
+                                                                                     style="width: @((double)excessDays / totalRequestedDays * 100)%">
+                                                                                    @excessDays Unpaid
+                                                                                </div>
+                                                                            }
+                                                                        </div>
+                                                                    </div>
+                                                                }
+                                                                else
+                                                                {
+                                                                    <div class="flex-fill">
+                                                                        <div class="progress" style="height: 25px;">
+                                                                            <div class="progress-bar bg-warning" role="progressbar" style="width: 100%">
+                                                                                @excessDays Unpaid Days
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                }
+                                                            </div>
+                                                            <div class="d-flex justify-content-between mt-1">
+                                                                <small class="text-muted">@startDate.ToString("dd MMM")</small>
+                                                                <small class="text-muted">@endDate.ToString("dd MMM yyyy")</small>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+                else
+                {
+                    <div class="text-center py-5" id="noRecordsMessage">
+                        <i class="fas fa-calendar-alt fa-3x text-muted mb-3"></i>
+                        <h5 class="text-muted">No unpaid leave requests found</h5>
+                        <p class="text-muted">You haven't submitted any unpaid leave requests yet.</p>
+                        <a href="/Leaves/Create" class="btn btn-primary">
+                            <i class="fas fa-plus me-1"></i>
+                            Apply for Leave
+                        </a>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        $(document).ready(function() {
+            // Filter functionality
+            function filterTable() {
+                const statusFilter = $('#statusFilter').val().toLowerCase();
+                const yearFilter = $('#yearFilter').val();
+                let visibleCount = 0;
+
+                $('#unpaidLeaveTable tbody tr:not(.collapse)').each(function() {
+                    const row = $(this);
+                    const status = row.data('status');
+                    const year = row.data('year').toString();
+
+                    let showRow = true;
+
+                    // Status filter
+                    if (statusFilter && status !== statusFilter) {
+                        showRow = false;
+                    }
+
+                    // Year filter
+                    if (yearFilter && year !== yearFilter) {
+                        showRow = false;
+                    }
+
+                    if (showRow) {
+                        row.show();
+                        // Also show the corresponding detail row if it exists
+                        row.next('.collapse').show();
+                        visibleCount++;
+                    } else {
+                        row.hide();
+                        // Also hide the corresponding detail row
+                        row.next('.collapse').hide();
+                    }
+                });
+
+                // Update record count
+                $('#recordCount').text(visibleCount);
+
+                // Show/hide no records message
+                if (visibleCount === 0) {
+                    $('#unpaidLeaveTable').hide();
+                    $('#noRecordsMessage').show();
+                } else {
+                    $('#unpaidLeaveTable').show();
+                    $('#noRecordsMessage').hide();
+                }
+            }
+
+            // Event listeners for filters
+            $('#statusFilter, #yearFilter').on('change', filterTable);
+
+            // Clear filters
+            $('#clearFilters').on('click', function() {
+                $('#statusFilter').val('');
+                $('#yearFilter').val('');
+                filterTable();
+            });
+
+            // Add confirmation for delete actions
+            $('a[title="Cancel"]').on('click', function(e) {
+                if (!confirm('Are you sure you want to cancel this unpaid leave request?')) {
+                    e.preventDefault();
+                }
+            });
+
+            // Auto-hide success messages after 5 seconds
+            setTimeout(function() {
+                $('.alert-success').fadeOut('slow');
+            }, 5000);
+
+            // Auto-hide alerts after 5 seconds
+            const alerts = document.querySelectorAll('.alert');
+            alerts.forEach(function(alert) {
+                setTimeout(function() {
+                    const bsAlert = new bootstrap.Alert(alert);
+                    bsAlert.close();
+                }, 5000);
+            });
+        });
+
+        // Toggle individual details
+        function toggleDetails(requestId) {
+            const detailsRow = document.getElementById('details-' + requestId);
+            if (detailsRow) {
+                const collapse = new bootstrap.Collapse(detailsRow, {
+                    toggle: true
+                });
+            }
+        }
+    </script>
+}
